@@ -38,6 +38,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
   const [plan, setPlan] = useState<File | null>(null);
   const [issues, setIssues] = useState<ImportIssue[]>([]);
   const [loaded, setLoaded] = useState<string>('');
+  const [busy, setBusy] = useState(false);
 
   const issueText = (i: ImportIssue) =>
     ({
@@ -50,6 +51,9 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
 
   const run = async () => {
     if (!results) return;
+    setBusy(true);
+    // Батырма «өңделуде» күйін көрсетіп үлгеруі үшін
+    await new Promise((r) => setTimeout(r, 30));
     const r = importCatalog(await results.text(), plan ? await plan.text() : undefined, results.name);
     setIssues(r.issues);
     if (r.courses.length) {
@@ -58,6 +62,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
       const schools = new Set(r.courses.flatMap((x) => x.ds.units.map((u) => u.school))).size;
       setLoaded(`${r.courses.length} ${t('курс (пән × параллель)', 'курс(ов) (предмет × параллель)')}, ${students} ${t('оқушы нәтижесі', 'результатов учеников')}, ${schools} ${t('мектеп', 'школ')}`);
     } else setLoaded('');
+    setBusy(false);
   };
 
   const sample = generateDemo();
@@ -91,7 +96,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
         <article className="card pad">
           <div className="stephead">
             <span className="n">1</span>
-            <h3>{t('Үлгіні жүктеп алыңыз', 'Скачайте шаблон')}</h3>
+            <h2 className="h3">{t('Үлгіні жүктеп алыңыз', 'Скачайте шаблон')}</h2>
           </div>
           <p className="small">
             {t(
@@ -112,7 +117,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
         <article className="card pad">
           <div className="stephead">
             <span className="n">2</span>
-            <h3>{t('Файлдарды жүктеңіз', 'Загрузите файлы')}</h3>
+            <h2 className="h3">{t('Файлдарды жүктеңіз', 'Загрузите файлы')}</h2>
           </div>
           <Drop
             t={t}
@@ -129,9 +134,9 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
             hint={t('Міндетті емес · жоспарлы сағат пен тірек тақырыптар', 'Необязательно · плановые часы и опорные темы')}
           />
           <div className="actions">
-            <button className="btn primary" disabled={!results} onClick={run}>
-              <Icon name="sparkle" size={16} />
-              {t('Жүктеу және талдау', 'Загрузить и проанализировать')}
+            <button className="btn primary" disabled={!results || busy} aria-busy={busy} onClick={run}>
+              {busy ? <span className="spinner" aria-hidden="true" /> : <Icon name="sparkle" size={16} />}
+              {busy ? t('Өңделуде…', 'Обработка…') : t('Жүктеу және талдау', 'Загрузить и проанализировать')}
             </button>
             {!synthetic && (
               <button className="btn" onClick={onReset}>

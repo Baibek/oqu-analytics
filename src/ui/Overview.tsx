@@ -79,7 +79,7 @@ export function Overview({ c }: { c: Ctx }) {
             {t('орташа меңгеру үлесі', 'средняя доля усвоивших')}
             <Hint text={g.mastery} />
             {local && (
-              <span style={{ display: 'block' }}>
+              <span className="block">
                 {t('облыс', 'область')} {fmt(regAvg)}% ({signed(mean(usable.map((s) => s.mastery)) - regAvg, 0)} п.п.)
               </span>
             )}
@@ -108,7 +108,7 @@ export function Overview({ c }: { c: Ctx }) {
               {local && ` · ${t('сынып / облыс', 'класс / область')}`}
             </small>
           </p>
-          {hard.length > 0 && (
+          {hard.length > 0 ? (
             <ul className="rows">
               {hard.slice(0, 4).map((s) => (
                 <li key={s.i}>
@@ -119,6 +119,26 @@ export function Overview({ c }: { c: Ctx }) {
                 </li>
               ))}
             </ul>
+          ) : watch.length > 0 ? (
+            <>
+              <p className="empty-ok">
+                <Icon name="check" size={16} />
+                {t('Меңгеру үлесі 50%-дан төмен тақырып жоқ. Назардағы тақырыптар:', 'Тем с долей усвоивших ниже 50% нет. Темы в зоне риска:')}
+              </p>
+              <ul className="rows">
+                {[...watch].sort((a, b) => a.mastery - b.mastery).slice(0, 4).map((s) => (
+                  <li key={s.i}>
+                    <span>{ds.topics[s.i].name[lang]}</span>
+                    <b className="c-watch">{fmt(s.mastery)}%</b>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="empty-ok">
+              <Icon name="check" size={16} />
+              {t('Барлық тақырып жақсы меңгерілген (65%-дан жоғары).', 'Все темы усвоены хорошо (выше 65%).')}
+            </p>
           )}
           <button className="btn ghost cta" onClick={() => c.go('topics')}>
             {t('Барлық тақырып', 'Все темы')} <Icon name="arrow" size={16} />

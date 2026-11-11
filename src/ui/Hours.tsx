@@ -143,7 +143,7 @@ export function Hours({ c }: { c: Ctx }) {
           </div>
         </div>
         <div className="actions">
-          <button className="btn primary" disabled={isRec && !locked.size} onClick={() => setHours(recommendHours(model, stats, locked, hours))}>
+          <button className={`btn primary ${isRec && !locked.size ? 'done' : ''}`} disabled={isRec && !locked.size} onClick={() => setHours(recommendHours(model, stats, locked, hours))}>
             <Icon name={isRec && !locked.size ? 'check' : 'sparkle'} size={16} />
             {locked.size ? t('Құлыппен қайта есептеу', 'Пересчитать с замками') : isRec ? t('Ұсыныс қолданылды', 'Рекомендация применена') : t('Ұсынысты қолдану', 'Применить рекомендацию')}
           </button>
@@ -154,7 +154,7 @@ export function Hours({ c }: { c: Ctx }) {
         </div>
       </div>
 
-      <div className="actions" style={{ marginBottom: 16 }}>
+      <div className="actions actions-spaced">
         <button
           className="btn sm"
           disabled={balance !== 0}
@@ -204,7 +204,7 @@ export function Hours({ c }: { c: Ctx }) {
         </div>
       )}
 
-      <div className="card tablecard">
+      <div className="card tablecard hours-wrap">
         <table className="hours">
           <thead>
             <tr>
@@ -233,8 +233,8 @@ export function Hours({ c }: { c: Ctx }) {
                     <b>{tp.name[lang]}</b>
                     <Pill kind={stats[i].status}>{statusLabel(stats[i].status, t)}</Pill>
                   </td>
-                  <td className="num">{tp.planned}</td>
-                  <td>
+                  <td className="num" data-label={t('Жоспар', 'План')}>{tp.planned}</td>
+                  <td className="c-step" data-label={t('Ұсыныс', 'Рекомендация')}>
                     <span className="stepper">
                       <button disabled={hours[i] <= m.min || isLocked} onClick={() => set(i, hours[i] - 1)} aria-label={t(`${tp.name[lang]}: бір сағатқа азайту`, `${tp.name[lang]}: уменьшить на час`)}>
                         −
@@ -244,14 +244,14 @@ export function Hours({ c }: { c: Ctx }) {
                         +
                       </button>
                     </span>
-                    <small className="muted" style={{ display: 'block', marginTop: 4 }}>
+                    <small className="muted range-hint">
                       {t('шек', 'пределы')} {m.min}–{m.max}
                     </small>
                   </td>
-                  <td className="num">
+                  <td className="num" data-label="Δ">
                     <span className={`delta ${d > 0 ? 'up' : d < 0 ? 'down' : 'zero'}`}>{d === 0 ? '0' : signed(d, 0)}</span>
                   </td>
-                  <td className="num">
+                  <td className="num" data-label={t('Болжам, балл', 'Прогноз, балл')}>
                     {d === 0 ? (
                       <span className="muted">—</span>
                     ) : (
@@ -267,10 +267,10 @@ export function Hours({ c }: { c: Ctx }) {
                       {open ? t('Жасыру', 'Свернуть') : t('Толығырақ', 'Подробнее')}
                     </button>
                   </td>
-                  <td>
+                  <td className="c-lock">
                     <label className="lock">
                       <input type="checkbox" checked={isLocked} onChange={() => setLocked(toggle(locked, i))} />
-                      <span className="sr-only">{t('Құлыптау', 'Закрепить')}</span>
+                      <span className="lock-text">{t('Құлыптау', 'Закрепить')}</span>
                     </label>
                   </td>
                 </tr>

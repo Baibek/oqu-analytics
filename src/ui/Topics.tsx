@@ -97,7 +97,7 @@ export function Topics({ c }: { c: Ctx }) {
                     </div>
                   </div>
                 )}
-                <dl className="facts" style={{ marginTop: pre?.root ? 12 : 8 }}>
+                <dl className={`facts ${pre?.root ? 'after-root' : ''}`}>
                   <div>
                     <dt>{t('Оқушы / сынып', 'Учеников / классов')}</dt>
                     <dd>

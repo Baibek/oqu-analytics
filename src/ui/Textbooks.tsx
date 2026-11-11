@@ -156,7 +156,7 @@ export function Textbooks({ c, setRefBook }: { c: Ctx; setRefBook: (s: string) =
               <tr key={r.name} className={r.name === mine ? 'mine' : ''}>
                 <td>
                   <b>{r.name}</b>
-                  {r.name === mine && <small className="muted" style={{ display: 'block' }}>{t('таңдалған сынып', 'выбранный класс')}</small>}
+                  {r.name === mine && <small className="muted block">{t('таңдалған сынып', 'выбранный класс')}</small>}
                 </td>
                 <td className="num">{r.n}</td>
                 <td className="num">{r.units}</td>

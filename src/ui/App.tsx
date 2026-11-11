@@ -101,6 +101,9 @@ export function App() {
 
   return (
     <>
+      <a className="skip" href="#main">
+        {t('Негізгі мазмұнға өту', 'Перейти к содержимому')}
+      </a>
       <header className="topbar">
         <div className="topbar-in">
           <div className="brand">
@@ -197,7 +200,7 @@ export function App() {
           )}
         </section>
 
-        <div className="context">
+        <section className="context" aria-label={t('Көрсетілген дерек', 'Отображаемые данные')}>
           <span className="dataset">
             {source.synthetic && <span className="pill pill-synth">{t('Синтетикалық дерек', 'Синтетические данные')}</span>}
             <b>
@@ -230,9 +233,9 @@ export function App() {
               </label>
             </span>
           )}
-        </div>
+        </section>
 
-        <main key={tab}>
+        <main key={tab} id="main" tabIndex={-1}>
           {tab === 'overview' && <Overview c={ctx} />}
           {tab === 'topics' && <Topics c={ctx} />}
           {tab === 'textbooks' && <Textbooks c={ctx} setRefBook={setRefBook} />}

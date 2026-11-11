@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { answer, AssistAction, AssistContext, contextForModel, SUGGESTIONS } from '../lib/assistant';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { answer, AssistAction, AssistContext, contextForModel, suggestions } from '../lib/assistant';
 import { Ctx, Icon } from './common';
 
 interface Msg {
@@ -31,6 +31,10 @@ const SYSTEM = `You are the assistant inside Oqu Analytics, a web tool that help
 Answer using only the DATA JSON that follows; the site computed it for the subject, grade and scope the user is looking at. Reply in the language of the question (Kazakh or Russian).
 Quote the numbers you rely on, with their confidence interval, p-value or evidence level where the data gives one. When the data cannot answer the question, say that plainly instead of guessing, and suggest which page of the site to open.
 When "synthetic" is true, the data is a demo and invented; mention this if the user asks about real schools or publishers.
+Field notes: mastery_pct is the share of students scoring at least 50; status "hard" means below 50%, "watch" below 65%, "nodata" means too few students for a conclusion. sections aggregates topics per section. weakest_schools lists the five schools with the lowest mastery and, for each, the topics furthest below the region; such rankings ignore students' starting level, so never use them to judge teachers.
+Hours: plus_one_hour_effect is the expected change in a topic's mean score for one hour above plan; for h hours the model gives hours_gain_log × ln(h / hours_planned). It is valid only inside hours_trusted_range (about ±30% of plan and what classes in the data actually had); outside it, say the data cannot predict. With hours_evidence "none" the benefit of extra hours is not shown. The yearly hours_total stays fixed, so hours added to one topic come from another.
+LOCAL_ANSWER, when present, is the site's built-in analyser's reply to this same question, computed from the full data (for example a specific school or class, a section, or a what-if on hours). Use its numbers where they fit the question and do not contradict it when it says data is insufficient; ignore it if it misread the question.
+Never state a number that is not in DATA or LOCAL_ANSWER.
 Keep answers short: two to five sentences or a short list, in plain text without markdown headings.`;
 
 /** Claude режимі: SDK тек осы режим қосылғанда жүктеледі */
@@ -77,6 +81,8 @@ export function Assistant({ c, open, onClose, seed, ax }: { c: Ctx; open: boolea
   const [keyDraft, setKeyDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+  // Ұсынылатын сұрақтар ағымдағы курс пен таңдауға сай (нақты тақырып атауларымен)
+  const sugg = useMemo(() => suggestions(ax), [ax]);
   const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -111,8 +117,10 @@ export function Assistant({ c, open, onClose, seed, ax }: { c: Ctx; open: boolea
     setBusy(true);
     setMsgs((m) => [...m, { role: 'bot', text: '', source: 'claude' }]);
     const local = answer(q, ax);
+    // Кірістірілген талдаушының есептеген нақты сандары: нақты мектеп, «не болады?» т.б. сұрақтарға
+    const data = `${contextForModel(ax)}\n\nLOCAL_ANSWER (intent: ${local.intent}):\n${local.text.join('\n')}`;
     try {
-      const full = await askClaude(key, history, q, contextForModel(ax), (d) =>
+      const full = await askClaude(key, history, q, data, (d) =>
         setMsgs((m) => {
           const copy = [...m];
           copy[copy.length - 1] = { ...copy[copy.length - 1], text: copy[copy.length - 1].text + d };
@@ -228,8 +236,8 @@ export function Assistant({ c, open, onClose, seed, ax }: { c: Ctx; open: boolea
         {msgs.length === 0 && (
           <div className="msg bot">
             {t(
-              'Сәлеметсіз бе! Мен осы беттегі деректер бойынша жауап беремін: қиын тақырыптар және олардың себебі, оқулықтар, сағат жоспары, ең әлсіз мектептер мен сыныптар. Төмендегі сұрақтардың бірін таңдаңыз немесе өзіңіз жазыңыз.',
-              'Здравствуйте! Я отвечаю по данным этой страницы: сложные темы и их причины, учебники, план часов, самые слабые школы и классы. Выберите вопрос ниже или напишите свой.',
+              'Сәлеметсіз бе! Мен осы беттегі деректер бойынша жауап беремін: қиын тақырыптар мен бөлімдер және олардың себебі, оқулықтар, сағат жоспары («2 сағат қоссақ не болады?»), нақты мектеп не сынып («№5 мектеп», «8Ә»), «не істеу керек?». Төмендегі сұрақтардың бірін таңдаңыз немесе өзіңіз жазыңыз.',
+              'Здравствуйте! Я отвечаю по данным этой страницы: сложные темы и разделы и их причины, учебники, план часов («что будет, если добавить 2 часа?»), конкретная школа или класс («школа №5», «8Б»), «что делать?». Выберите вопрос ниже или напишите свой.',
             )}
           </div>
         )}
@@ -257,7 +265,7 @@ export function Assistant({ c, open, onClose, seed, ax }: { c: Ctx; open: boolea
       </div>
 
       <div className="ai-sugg">
-        {SUGGESTIONS[lang].slice(0, msgs.length ? 3 : 6).map((s) => (
+        {sugg.slice(0, msgs.length ? 3 : 6).map((s) => (
           <button key={s} onClick={() => void send(s)} disabled={busy}>
             {s}
           </button>

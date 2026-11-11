@@ -1,8 +1,24 @@
 import { useState } from 'react';
-import { CURRICULUM_COLS, download, exportCurriculum, exportResults, ImportedCourse, ImportIssue, importCatalog, RESULT_COLS } from '../lib/csv';
+import { CURRICULUM_COLS, download, exportCurriculum, exportResults, ImportedCourse, ImportIssue, importCatalog, parseCsv, RESULT_COLS, toCsv } from '../lib/csv';
+import { pickSheets, readXlsx, writeXlsx } from '../lib/xlsx';
 import { HARD, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
 import { generateDemo } from '../lib/generate';
 import { Ctx, Icon, Note, PageHead, TFn } from './common';
+
+const isExcel = (f: File) => /\.xlsx?$/i.test(f.name);
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** CSV мәтінін Excel жолдарына айналдыру: сандар Excel-де сан болып қалады */
+const csvToSheet = (csv: string) => parseCsv(csv).map((r, i) => (i ? r.map((v) => (v !== '' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v)) : r));
+
+function downloadBytes(name: string, bytes: Uint8Array, type: string) {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function Drop({ label, hint, file, onFile, t }: { label: string; hint: string; file: File | null; onFile: (f: File | null) => void; t: TFn }) {
   const [over, setOver] = useState(false);
@@ -27,7 +43,7 @@ function Drop({ label, hint, file, onFile, t }: { label: string; hint: string; f
         <b>{file ? file.name : label}</b>
         <small>{file ? `${(file.size / 1024).toFixed(0)} KB · ${t('басқа файл таңдау үшін басыңыз', 'нажмите, чтобы выбрать другой файл')}` : hint}</small>
       </span>
-      <input type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <input type="file" accept={`.xlsx,.xls,.csv,text/csv,${XLSX_MIME},application/vnd.ms-excel`} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
     </label>
   );
 }
@@ -39,6 +55,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
   const [issues, setIssues] = useState<ImportIssue[]>([]);
   const [loaded, setLoaded] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [fileError, setFileError] = useState('');
 
   const issueText = (i: ImportIssue) =>
     ({
@@ -49,20 +66,64 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
       bad_hours: t(`Жоспарлы сағат дұрыс емес: ${i.detail}`, `Некорректные плановые часы: ${i.detail}`),
     })[i.code];
 
+  const fileErrorText = (code: string) =>
+    ({
+      xls_legacy: t('Ескі .xls форматы қолдау таппайды. Excel-де «Файл → Басқаша сақтау → Excel кітабы (.xlsx)» таңдаңыз немесе CSV ретінде сақтаңыз.', 'Старый формат .xls не поддерживается. В Excel выберите «Файл → Сохранить как → Книга Excel (.xlsx)» или сохраните как CSV.'),
+      no_results_sheet: t('Excel файлынан нәтижелер парағы табылмады: парақ «Нәтижелер» деп аталуы немесе бірінші жолында score бағаны болуы керек.', 'В Excel-файле не найден лист с результатами: назовите его «Результаты» или добавьте столбец score в первую строку.'),
+    })[code] ?? t('Файлды оқу мүмкін болмады. Ол бүлінген болуы мүмкін: Excel-де қайта сақтап көріңіз.', 'Не удалось прочитать файл. Возможно, он повреждён: попробуйте пересохранить его в Excel.');
+
+  /** Нәтижелер мен жоспардың CSV мәтінін алу: Excel болса, парақтарын тауып CSV-ге айналдырамыз */
+  const readInputs = async (): Promise<{ resultsCsv: string; planCsv?: string }> => {
+    let resultsCsv: string;
+    let planCsv: string | undefined;
+    if (isExcel(results!)) {
+      const { results: rs, plan: ps } = pickSheets(await readXlsx(await results!.arrayBuffer()));
+      if (!rs) throw new Error('no_results_sheet');
+      resultsCsv = toCsv(rs.rows);
+      if (ps) planCsv = toCsv(ps.rows);
+    } else resultsCsv = await results!.text();
+    if (plan) {
+      if (isExcel(plan)) {
+        const sheets = await readXlsx(await plan.arrayBuffer());
+        const ps = pickSheets(sheets).plan ?? sheets[0];
+        if (ps) planCsv = toCsv(ps.rows);
+      } else planCsv = await plan.text();
+    }
+    return { resultsCsv, planCsv };
+  };
+
   const run = async () => {
     if (!results) return;
     setBusy(true);
+    setFileError('');
     // Батырма «өңделуде» күйін көрсетіп үлгеруі үшін
     await new Promise((r) => setTimeout(r, 30));
-    const r = importCatalog(await results.text(), plan ? await plan.text() : undefined, results.name);
-    setIssues(r.issues);
-    if (r.courses.length) {
-      onLoad(r.courses);
-      const students = r.courses.reduce((a, x) => a + x.ds.students.length, 0);
-      const schools = new Set(r.courses.flatMap((x) => x.ds.units.map((u) => u.school))).size;
-      setLoaded(`${r.courses.length} ${t('курс (пән × параллель)', 'курс(ов) (предмет × параллель)')}, ${students} ${t('оқушы нәтижесі', 'результатов учеников')}, ${schools} ${t('мектеп', 'школ')}`);
-    } else setLoaded('');
-    setBusy(false);
+    try {
+      const { resultsCsv, planCsv } = await readInputs();
+      const r = importCatalog(resultsCsv, planCsv, results.name.replace(/\.(xlsx?|csv)$/i, ''));
+      setIssues(r.issues);
+      if (r.courses.length) {
+        onLoad(r.courses);
+        const students = r.courses.reduce((a, x) => a + x.ds.students.length, 0);
+        const schools = new Set(r.courses.flatMap((x) => x.ds.units.map((u) => u.school))).size;
+        setLoaded(`${r.courses.length} ${t('курс (пән × параллель)', 'курс(ов) (предмет × параллель)')}, ${students} ${t('оқушы нәтижесі', 'результатов учеников')}, ${schools} ${t('мектеп', 'школ')}`);
+      } else setLoaded('');
+    } catch (e) {
+      setIssues([]);
+      setLoaded('');
+      setFileError(fileErrorText(e instanceof Error ? e.message : ''));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const excelTemplate = () => {
+    const bytes = writeXlsx([
+      { name: t('Нәтижелер', 'Результаты'), rows: csvToSheet(exportResults(sample, lang, 2)) },
+      { name: t('Оқу жоспары', 'Учебный план'), rows: csvToSheet(exportCurriculum(sample, lang)) },
+    ]);
+    downloadBytes('oqu-analytics-template.xlsx', bytes, XLSX_MIME);
+    c.notify(t('Excel үлгісі жүктелді', 'Шаблон Excel скачан'));
   };
 
   const sample = generateDemo();
@@ -88,8 +149,8 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
       <PageHead
         title={t('Дерек', 'Данные')}
         question={t(
-          'Өз мектептеріңіздің нәтижесін талдағыңыз келе ме? CSV файлын жүктеңіз: ол браузерде өңделеді және ешқайда жіберілмейді.',
-          'Хотите проанализировать результаты своих школ? Загрузите CSV-файл: он обрабатывается в браузере и никуда не отправляется.',
+          'Өз мектептеріңіздің нәтижесін талдағыңыз келе ме? Excel (.xlsx) немесе CSV файлын жүктеңіз: ол браузерде өңделеді және ешқайда жіберілмейді.',
+          'Хотите проанализировать результаты своих школ? Загрузите файл Excel (.xlsx) или CSV: он обрабатывается в браузере и никуда не отправляется.',
         )}
       />
 
@@ -101,11 +162,14 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
           </div>
           <p className="small">
             {t(
-              'Үлгілер демо дерегінен жасалған: форматты көру үшін ашып қараңыз. Excel-де «CSV UTF-8» ретінде сақтаңыз; үтір де, нүктелі үтір де қабылданады.',
-              'Шаблоны собраны из демо-данных: откройте, чтобы увидеть формат. В Excel сохраняйте как «CSV UTF-8»; подходит и запятая, и точка с запятой.',
+              'Үлгі демо дерегінен жасалған: форматты көру үшін ашып қараңыз. Excel үлгісінде екі парақ бар: «Нәтижелер» және «Оқу жоспары». CSV-ді де қолдануға болады (UTF-8, үтір немесе нүктелі үтір).',
+              'Шаблон собран из демо-данных: откройте, чтобы увидеть формат. В шаблоне Excel два листа: «Результаты» и «Учебный план». Можно использовать и CSV (UTF-8, запятая или точка с запятой).',
             )}
           </p>
           <div className="actions">
+            <button className="btn primary" onClick={excelTemplate}>
+              <Icon name="download" size={16} /> {t('Excel үлгісі (.xlsx)', 'Шаблон Excel (.xlsx)')}
+            </button>
             <button className="btn" onClick={() => download('results-template.csv', exportResults(sample, lang, 2))}>
               <Icon name="download" size={16} /> results.csv
             </button>
@@ -124,14 +188,14 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
             t={t}
             file={results}
             onFile={setResults}
-            label={t('Нәтижелер — results.csv', 'Результаты — results.csv')}
-            hint={t('Міндетті · файлды осында сүйреңіз немесе басып таңдаңыз', 'Обязательно · перетащите файл сюда или нажмите')}
+            label={t('Нәтижелер — Excel (.xlsx) немесе CSV', 'Результаты — Excel (.xlsx) или CSV')}
+            hint={t('Міндетті · файлды сүйреңіз немесе басып таңдаңыз. Excel-де «Оқу жоспары» парағы болса, екінші файл керек емес', 'Обязательно · перетащите файл или нажмите. Если в Excel есть лист «Учебный план», второй файл не нужен')}
           />
           <Drop
             t={t}
             file={plan}
             onFile={setPlan}
-            label={t('Оқу жоспары — curriculum.csv', 'Учебный план — curriculum.csv')}
+            label={t('Оқу жоспары — Excel (.xlsx) немесе CSV', 'Учебный план — Excel (.xlsx) или CSV')}
             hint={t('Міндетті емес · жоспарлы сағат пен тірек тақырыптар', 'Необязательно · плановые часы и опорные темы')}
           />
           <div className="actions">
@@ -154,6 +218,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
               </button>
             </Note>
           )}
+          {fileError && <Note kind="warn">{fileError}</Note>}
           {issues.map((i, k) => (
             <Note key={k} kind="warn">
               {issueText(i)}
@@ -162,7 +227,7 @@ export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic:
         </article>
       </section>
 
-      <h2>{t('results.csv форматы', 'Формат results.csv')}</h2>
+      <h2>{t('«Нәтижелер» парағының (results.csv) форматы', 'Формат листа «Результаты» (results.csv)')}</h2>
       <div className="card tablecard">
         <table>
           <thead>

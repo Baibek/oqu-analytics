@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateDemo } from '../src/lib/generate';
+import { COURSES, generateCourse, generateDemo } from '../src/lib/generate';
 import { applyScope, compareTextbooks, fitHours, recommendHours, topicStats } from '../src/lib/analysis';
-import { answer, AssistContext, contextForModel, matchTopic, rankUnits } from '../src/lib/assistant';
+import { answer, AssistContext, contextForModel, matchTopic, rankUnits, suggestions, wordMatch } from '../src/lib/assistant';
 
 const ds = generateDemo();
 const stats = topicStats(ds);
@@ -58,5 +58,50 @@ describe('ИИ көмекші (офлайн)', () => {
     expect(all(r)).toContain('Облыс бойынша');
     expect(answer('сәлем', base()).actions).toEqual([]);
     expect(JSON.parse(contextForModel(base())).topics.length).toBe(ds.topics.length);
+  });
+
+  it('жалғау мен қате теруге төзімді', () => {
+    const i = (id: string) => ds.topics.findIndex((t) => t.id === id);
+    expect(matchTopic('Ом заңын', ds)).toBe(i('t14'));
+    expect(matchTopic('Кулон заңына', ds)).toBe(i('t10'));
+    expect(matchTopic('закону кулона', ds)).toBe(i('t10'));
+    expect(matchTopic('конденсаторлардың', ds)).toBe(i('t12'));
+    expect(matchTopic('кондесатор', ds)).toBe(i('t12'));
+    expect(matchTopic('паралельное соединение', ds)).toBe(i('t15'));
+    expect(wordMatch('салем', 'салу')).toBe(0);
+    expect(matchTopic('сәлем', ds)).toBe(null);
+  });
+
+  it('ойдан сан қоспайды: модель аралығынан тыс сағатқа болжам бермейді', () => {
+    const r = answer('Ом заңына 10 сағат қоссақ?', base());
+    const h = model.topics[ds.topics.findIndex((t) => t.id === 't14')];
+    expect(r.intent).toBe('whatif');
+    expect(all(r)).toContain(`${h.planned} → ${h.max}`);
+    expect(all(r)).toContain('аралықтан тыс');
+    expect(answer('№99 мектеп қалай?', base()).actions.some((a) => a.scope)).toBe(false);
+  });
+
+  it('Claude контекстінде бөлімдер мен мектептердің әлсіз тақырыптары бар', () => {
+    const j = JSON.parse(contextForModel(base()));
+    expect(j.sections.length).toBe(new Set(ds.topics.map((t) => t.section.kk)).size);
+    expect(j.weakest_schools[0].most_behind_region.length).toBeGreaterThan(0);
+    expect(j.topics[0].hours_trusted_range).toHaveLength(2);
+  });
+
+  it('барлық курста ұсынылатын сұрақтар жауапсыз қалмайды', () => {
+    for (const spec of COURSES) {
+      const d = generateCourse(spec);
+      const st = topicStats(d);
+      const m = fitHours(d);
+      for (const lang of ['kk', 'ru'] as const) {
+        const c: AssistContext = { lang, ds: d, region: d, stats: st, regionStats: st, textbooks: compareTextbooks(d), model: m, recommended: recommendHours(m, st), scopeLabel: null };
+        for (const q of suggestions(c)) {
+          const r = answer(q, c);
+          expect(r.intent, `${spec.key}: ${q}`).not.toBe('help');
+          expect(r.text.length, `${spec.key}: ${q}`).toBeLessThanOrEqual(7);
+          expect(r.text.join(' '), `${spec.key}: ${q}`).not.toMatch(/NaN|undefined/);
+        }
+      }
+    }
   });
 });

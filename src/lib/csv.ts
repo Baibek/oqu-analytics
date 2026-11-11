@@ -38,7 +38,7 @@ export function parseCsv(text: string): string[][] {
 export const toCsv = (rows: (string | number)[][]) =>
   '﻿' + rows.map((r) => r.map((v) => (/[",;\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))).join(',')).join('\n');
 
-export const RESULT_COLS = ['subject', 'grade', 'class', 'student_id', 'school', 'district', 'locality', 'language', 'textbook', 'baseline', 'topic', 'score', 'hours'] as const;
+export const RESULT_COLS = ['subject', 'grade', 'class', 'student_id', 'school', 'district', 'locality', 'language', 'textbook', 'program', 'baseline', 'topic', 'score', 'hours'] as const;
 export const CURRICULUM_COLS = ['subject', 'grade', 'topic', 'section', 'planned_hours', 'prerequisites'] as const;
 const REQUIRED = ['student_id', 'school', 'textbook', 'topic', 'score'];
 
@@ -119,10 +119,12 @@ export function importData(resultsCsv: string, curriculumCsv?: string, label = '
     const ukey = `${school}|${cls}|${textbook}|${lang}`;
     if (!unitIdx.has(ukey)) {
       unitIdx.set(ukey, units.length);
-      units.push({ id: ukey, school, name: cls, district: get(r, 'district') ?? '', urban: /^(urban|city|қала|город|1|true)/i.test(get(r, 'locality') ?? ''), lang, textbook, hours: [] });
+      units.push({ id: ukey, school, name: cls, district: get(r, 'district') ?? '', urban: /^(urban|city|қала|город|1|true)/i.test(get(r, 'locality') ?? ''), lang, textbook, program: '', hours: [] });
       unitHours.push(new Map());
     }
     const ui = unitIdx.get(ukey)!;
+    // Бағдарлама бағаны міндетті емес: сыныптың бірінші бос емес мәні алынады
+    if (!units[ui].program) units[ui].program = get(r, 'program') ?? '';
     const h = num(get(r, 'hours'));
     if (h > 0) unitHours[ui].set(ti, h);
     const skey = `${ukey}|${get(r, 'student_id')}`;
@@ -205,7 +207,7 @@ export function exportResults(ds: Dataset, lang: Lang, limitUnits?: number): str
     const u = ds.units[s.unit];
     ds.topics.forEach((t, i) => {
       if (Number.isNaN(s.scores[i])) return;
-      rows.push([ds.subject[lang], ds.grade || '', u.name, s.id, u.school, u.district, u.urban ? 'urban' : 'rural', u.lang, u.textbook, Number.isNaN(s.baseline) ? '' : s.baseline, t.name[lang], s.scores[i], Number.isNaN(u.hours[i]) ? '' : u.hours[i]]);
+      rows.push([ds.subject[lang], ds.grade || '', u.name, s.id, u.school, u.district, u.urban ? 'urban' : 'rural', u.lang, u.textbook, u.program, Number.isNaN(s.baseline) ? '' : s.baseline, t.name[lang], s.scores[i], Number.isNaN(u.hours[i]) ? '' : u.hours[i]]);
     });
   }
   return toCsv(rows);

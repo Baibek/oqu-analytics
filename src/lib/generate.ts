@@ -2,7 +2,7 @@ import type { Dataset, L10n, Student, Topic, Unit } from './types';
 import {
   ALGEBRA_7, ALGEBRA_8, ALGEBRA_9, CHEMISTRY_8, CHEMISTRY_9, GEOMETRY_7, GEOMETRY_8, GEOMETRY_9, PHYSICS_7, PHYSICS_8, PHYSICS_9,
 } from './curriculum';
-import { gauss, rng } from './stats';
+import { gauss, rng, sum } from './stats';
 
 // Демо дерегінің генераторы. Дерек СИНТЕТИКАЛЫҚ: мектептер де, баллдар да ойдан алынған.
 // 8-сынып физикасына әдейі «дұрыс жауаптар» салынған (TRUTH), сондықтан талдау әдістері
@@ -18,6 +18,34 @@ export const TRUTH = {
   hoursGainDefault: 4,
   hoursGainNone: ['t01', 't03', 't17'],
 };
+
+/** Оқу бағдарламалары: 2025 жылғы қыркүйектен бастап кейбір мектептер жаңартылған бағдарламаны сынақтан өткізеді */
+export const PROGRAM_CURRENT = 'Қолданыстағы бағдарлама';
+export const PROGRAM_PILOT = 'Жаңартылған бағдарлама (пилот)';
+
+/**
+ * Пилоттық бағдарламаның 8-сынып физикасындағы шынайы әсері, балл (бөлімнің орысша атауының басы бойынша).
+ * Электростатикада пилот жақсы, жылу құбылыстарында сәл нашар, жалпы алғанда ≈ 0:
+ * (+5 · 3 тақырып − 3 · 5 тақырып) / 20 = 0.
+ */
+export const PROGRAM_TRUTH = {
+  current: PROGRAM_CURRENT,
+  pilot: PROGRAM_PILOT,
+  /** Бөлім бойынша әсер */
+  sections: [
+    { sectionRu: 'Основы электростатики', value: 5 },
+    { sectionRu: 'Тепловые явления', value: -3 },
+  ],
+  /** Барлық тақырып бойынша орташа әсер */
+  overall: 0,
+};
+
+/**
+ * Пилот мектептер кездейсоқ таңдалмаған: олар көбіне қалада (қалалық мектептердің жартысы,
+ * ауылдықтардың 6-уы). Сондықтан қарапайым салыстыру пилотты асыра бағалайды.
+ * Ереже детерминистік: кездейсоқ сандар ағыны өзгермейді.
+ */
+const isPilot = (s: number, urban: boolean) => (urban ? s % 2 === 0 : s % 7 === 3);
 
 const PHYS8_BASE: Record<string, number> = {
   t01: 72, t02: 66, t03: 70, t04: 52, t05: 47, t06: 63, t07: 58, t08: 50, t09: 55, t10: 54,
@@ -42,6 +70,7 @@ interface CohortSchool {
   urban: boolean;
   lang: 'kk' | 'ru';
   textbook: string;
+  program: string;
   quality: number;
   classes: { k: number; ability: number; baselines: number[] }[];
 }
@@ -64,6 +93,7 @@ export function cohort(grade: number): CohortSchool[] {
       lang: r() < 0.7 ? 'kk' : 'ru',
       // Соңғы үш мектеп — D оқулығы: қорытынды жасауға дерек әдейі жеткіліксіз
       textbook: s >= N_SCHOOLS - 3 ? 'Оқулық D' : urban ? URBAN_MIX[s] : RURAL_MIX[(s - 20) % RURAL_MIX.length],
+      program: isPilot(s, urban) ? PROGRAM_PILOT : PROGRAM_CURRENT,
       quality,
       classes: Array.from({ length: urban ? 2 + (s % 2) : 1 }, (_, k) => {
         const ability = gauss(r) * 2;
@@ -89,6 +119,8 @@ export interface CourseSpec {
   book?: Record<string, number>;
   /** Бір оқулықтың бір бөлімдегі қосымша әсері */
   bonus?: { book: string; sectionRu: string; value: number };
+  /** Пилоттық бағдарламаның бөлім бойынша әсері; берілмесе 0 */
+  pilot?: { sectionRu: string; value: number }[];
 }
 
 const SUBJ = {
@@ -116,6 +148,7 @@ export const COURSES: CourseSpec[] = [
     gain: Object.fromEntries(PHYSICS_8.map((t) => [t.id, TRUTH.hoursGainNone.includes(t.id) ? 0 : (TRUTH.hoursGain[t.id] ?? TRUTH.hoursGainDefault)])),
     book: TRUTH.textbook,
     bonus: { book: 'Оқулық B', sectionRu: 'Постоянный', value: TRUTH.bCurrentBonus },
+    pilot: PROGRAM_TRUTH.sections,
   },
   { key: 'phys-9', subject: SUBJ.phys, grade: 9, topics: PHYSICS_9, seed: 93 },
   { key: 'chem-8', subject: SUBJ.chem, grade: 8, topics: CHEMISTRY_8, seed: 84 },
@@ -138,6 +171,8 @@ export function generateCourse(spec: CourseSpec): Dataset {
   // Мектептер, сыныптар және оқушылар параллельге ортақ: 8Ә сыныбының оқушылары
   // алгебрада да, физикада да сол адамдар. Пәнге тек баллдар, сағаттар және мұғалім әсері тән.
   const co = cohort(spec.grade);
+  // Бағдарлама әсері тақырып бойынша (кездейсоқ сан қолданбайды)
+  const pilotFx = topics.map((t) => sum((spec.pilot ?? []).filter((p) => t.section.ru.startsWith(p.sectionRu)).map((p) => p.value)));
   for (const sc of co) {
     for (const cl of sc.classes) {
       const ui = units.length;
@@ -149,6 +184,7 @@ export function generateCourse(spec: CourseSpec): Dataset {
         urban: sc.urban,
         lang: sc.lang,
         textbook: sc.textbook,
+        program: sc.program,
         hours: topics.map((t) => Math.max(1, t.planned + Math.round(gauss(r) * Math.max(1.1, t.planned * 0.15)))),
       };
       units.push(unit);
@@ -163,7 +199,7 @@ export function generateCourse(spec: CourseSpec): Dataset {
           const e = t.prereq.length ? 0.45 * noise[t.prereq[0]] + own : own;
           noise[t.id] = e;
           const tb = (book[sc.textbook] ?? 0) + (spec.bonus && sc.textbook === spec.bonus.book && t.section.ru.startsWith(spec.bonus.sectionRu) ? spec.bonus.value : 0);
-          const v = base[t.id] - 5 + topicFx[i] + 0.7 * (baseline - 55) + (sc.urban ? 5 : 0) + sc.quality + cl.ability + teacherFx + tb + gain[t.id] * Math.log(unit.hours[i] / t.planned) + e;
+          const v = base[t.id] - 5 + topicFx[i] + 0.7 * (baseline - 55) + (sc.urban ? 5 : 0) + sc.quality + cl.ability + teacherFx + tb + (sc.program === PROGRAM_PILOT ? pilotFx[i] : 0) + gain[t.id] * Math.log(unit.hours[i] / t.planned) + e;
           return Math.round(Math.min(100, Math.max(0, v)));
         });
         students.push({ id: `${unit.id}-${n + 1}`, unit: ui, baseline: Math.round(Math.min(100, Math.max(0, baseline))), scores });

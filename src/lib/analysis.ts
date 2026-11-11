@@ -1,4 +1,4 @@
-import type { Dataset, Filter, Scope } from './types';
+import type { Dataset, Filter, Scope, Unit } from './types';
 import { mean, ols, pearson, quantile, rng, sd, sum } from './stats';
 
 // ---- Ортақ баптаулар (барлығы интерфейсте түсіндіріледі) ----
@@ -184,16 +184,34 @@ export interface TextbookRow {
   flipped: boolean;
 }
 
-export interface TextbookResult {
+/** Түзету факторлары */
+export type Control = 'baseline' | 'urban' | 'lang' | 'textbook';
+
+/** Топтарды (оқулықтарды, бағдарламаларды) салыстыру нәтижесі */
+export interface GroupResult {
   ref: string;
   rows: TextbookRow[];
   /** Қандай факторларға түзетілді */
-  controls: ('baseline' | 'urban' | 'lang')[];
+  controls: Control[];
   outcomeSd: number;
 }
 
-export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: number[]): TextbookResult | null {
-  const idx = topicIdx ?? ds.topics.map((_, i) => i);
+export type TextbookResult = GroupResult;
+export type ProgramResult = GroupResult;
+
+interface GroupOpts {
+  refName?: string;
+  topicIdx?: number[];
+  /** Оқулықты да түзету факторы ретінде қосу (бағдарламаларды салыстырғанда) */
+  controlTextbook?: boolean;
+}
+
+/**
+ * Сыныптың бір белгісі (оқулық, бағдарлама) бойынша топтарды салыстыру: OLS, бастапқы деңгей,
+ * қала/ауыл, оқыту тілі (қажет болса, оқулық) бойынша түзету, қателер мектеп бойынша кластерленген.
+ */
+function compareGroups(ds: Dataset, groupOf: (u: Unit) => string, opts: GroupOpts): GroupResult | null {
+  const idx = opts.topicIdx ?? ds.topics.map((_, i) => i);
   const rows = ds.students
     .map((s) => {
       const v = idx.map((i) => s.scores[i]).filter((x) => !Number.isNaN(x));
@@ -201,33 +219,44 @@ export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: numbe
     })
     .filter((x) => !Number.isNaN(x.y) && (!ds.hasBaseline || !Number.isNaN(x.s.baseline)));
   if (!rows.length) return null;
+  const grp = (x: (typeof rows)[number]) => groupOf(ds.units[x.s.unit]);
 
-  const names = [...new Set(rows.map((x) => ds.units[x.s.unit].textbook))].sort();
+  const names = [...new Set(rows.map(grp))].sort();
   const info = names.map((name) => {
-    const mine = rows.filter((x) => ds.units[x.s.unit].textbook === name);
+    const mine = rows.filter((x) => grp(x) === name);
     return { name, n: mine.length, units: new Set(mine.map((x) => x.s.unit)).size, rawMean: mean(mine.map((x) => x.y)) };
   });
   const enough = info.filter((t) => t.n >= MIN_STUDENTS && t.units >= MIN_UNITS);
-  const ref = enough.find((t) => t.name === refName) ?? [...enough].sort((a, b) => b.n - a.n)[0];
+  const ref = enough.find((t) => t.name === opts.refName) ?? [...enough].sort((a, b) => b.n - a.n)[0];
   if (!ref) {
     return { ref: '', controls: [], outcomeSd: sd(rows.map((x) => x.y)), rows: info.map((t) => ({ ...t, naive: null, adj: null, lo: null, hi: null, p: null, sdUnits: null, verdict: 'nodata', flipped: false })) };
   }
   const others = enough.filter((t) => t.name !== ref.name);
-  const used = rows.filter((x) => enough.some((t) => t.name === ds.units[x.s.unit].textbook));
+  const used = rows.filter((x) => enough.some((t) => t.name === grp(x)));
 
   // Тек өзгермелі факторларды қосамыз (әйтпесе матрица айналмайды)
-  const controls: TextbookResult['controls'] = [];
+  const controls: Control[] = [];
   if (ds.hasBaseline) controls.push('baseline');
-  const varies = (f: (u: Dataset['units'][number]) => boolean) => new Set(used.map((x) => f(ds.units[x.s.unit]))).size > 1;
+  const varies = (f: (u: Unit) => unknown) => new Set(used.map((x) => f(ds.units[x.s.unit]))).size > 1;
   if (varies((u) => u.urban)) controls.push('urban');
   if (varies((u) => u.lang === 'ru')) controls.push('lang');
+  // Оқулық: ең көп таралғаны — негіз, қалғандарына жалған айнымалы
+  let books: string[] = [];
+  if (opts.controlTextbook && varies((u) => u.textbook)) {
+    const cnt = new Map<string, number>();
+    for (const x of used) cnt.set(ds.units[x.s.unit].textbook, (cnt.get(ds.units[x.s.unit].textbook) ?? 0) + 1);
+    books = [...cnt.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(1).map(([b]) => b).sort();
+    controls.push('textbook');
+  }
 
   const X = used.map((x) => {
     const u = ds.units[x.s.unit];
-    const row = [1, ...others.map((t) => (u.textbook === t.name ? 1 : 0))];
+    const g = groupOf(u);
+    const row = [1, ...others.map((t) => (g === t.name ? 1 : 0))];
     if (controls.includes('baseline')) row.push(x.s.baseline);
     if (controls.includes('urban')) row.push(u.urban ? 1 : 0);
     if (controls.includes('lang')) row.push(u.lang === 'ru' ? 1 : 0);
+    for (const b of books) row.push(u.textbook === b ? 1 : 0);
     return row;
   });
   const y = used.map((x) => x.y);
@@ -248,7 +277,7 @@ export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: numbe
       const half = fit.half[k + 1];
       const p = fit.p[k + 1];
       const naive = t.rawMean - ref.rawMean;
-      // Бастапқы деңгей белгісіз болса, айырмашылықты оқулыққа таңуға болмайды
+      // Бастапқы деңгей белгісіз болса, айырмашылықты топқа таңуға болмайды
       const sig = p < 0.05 && ds.hasBaseline;
       return {
         ...t,
@@ -265,18 +294,51 @@ export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: numbe
   };
 }
 
+export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: number[]): TextbookResult | null {
+  return compareGroups(ds, (u) => u.textbook, { refName, topicIdx });
+}
+
 export interface SectionCell {
   section: string;
   rows: TextbookRow[];
 }
 
-/** Оқулық әсері бөлімдер бойынша: оқулықтың қай бөлімі күшті не әлсіз */
-export function textbooksBySection(ds: Dataset, lang: 'kk' | 'ru', refName?: string): SectionCell[] {
+function bySection(ds: Dataset, lang: 'kk' | 'ru', run: (idx: number[]) => GroupResult | null): SectionCell[] {
   const sections = [...new Set(ds.topics.map((t) => t.section[lang]))];
   return sections.map((section) => {
     const idx = ds.topics.map((t, i) => (t.section[lang] === section ? i : -1)).filter((i) => i >= 0);
-    return { section, rows: compareTextbooks(ds, refName, idx)?.rows ?? [] };
+    return { section, rows: run(idx)?.rows ?? [] };
   });
+}
+
+/** Оқулық әсері бөлімдер бойынша: оқулықтың қай бөлімі күшті не әлсіз */
+export function textbooksBySection(ds: Dataset, lang: 'kk' | 'ru', refName?: string): SectionCell[] {
+  return bySection(ds, lang, (idx) => compareTextbooks(ds, refName, idx));
+}
+
+// ================= 3б. Оқу бағдарламалары =================
+
+/** Бағдарламасы белгілі сыныптар ғана; екі бағдарламадан аз болса — салыстыру жоқ */
+function withProgram(ds: Dataset): Dataset | null {
+  const known = ds.units.map((u) => u.program.trim() !== '');
+  const students = ds.students.filter((s) => known[s.unit]);
+  const progs = new Set(students.map((s) => ds.units[s.unit].program.trim()));
+  return progs.size >= 2 ? { ...ds, students } : null;
+}
+
+/**
+ * Оқу бағдарламаларын салыстыру: оқулықтармен бірдей әдіс, бірақ оқулық та түзету факторы
+ * (бағдарлама әсерін оқулық әсерінен ажырату үшін). Бағдарлама туралы дерек болмаса — null.
+ */
+export function comparePrograms(ds: Dataset, refName?: string, topicIdx?: number[]): ProgramResult | null {
+  const known = withProgram(ds);
+  return known ? compareGroups(known, (u) => u.program.trim(), { refName, topicIdx, controlTextbook: true }) : null;
+}
+
+/** Бағдарлама әсері бөлімдер бойынша */
+export function programsBySection(ds: Dataset, lang: 'kk' | 'ru', refName?: string): SectionCell[] {
+  const known = withProgram(ds);
+  return known ? bySection(known, lang, (idx) => comparePrograms(known, refName, idx)) : [];
 }
 
 // ================= 4. Сағаттар =================

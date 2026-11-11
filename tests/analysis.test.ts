@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gauss, ols, rng, tCdf, tQuantile } from '../src/lib/stats';
-import { COURSES, generateCourse, generateDemo, TRUTH } from '../src/lib/generate';
-import { applyFilter, applyScope, compareTextbooks, fitHours, predictEffect, recommendHours, textbooksBySection, topicStats } from '../src/lib/analysis';
+import { cohort, COURSES, generateCourse, generateDemo, PROGRAM_TRUTH, TRUTH } from '../src/lib/generate';
+import { applyFilter, applyScope, comparePrograms, compareTextbooks, fitHours, programsBySection, predictEffect, recommendHours, textbooksBySection, topicStats } from '../src/lib/analysis';
 import { exportCurriculum, exportResults, importCatalog, importData, parseCsv, toCsv } from '../src/lib/csv';
 import { sum } from '../src/lib/stats';
 
@@ -123,6 +123,61 @@ describe('демо дерегіндегі салынған жауаптар', ()
     expect(sum(h)).toBe(m.total);
   });
 
+  it('бағдарлама: пилот мектептер көбіне қалада, бағдарлама мектепке тән', () => {
+    const co = cohort(8);
+    const pilot = co.filter((x) => x.program === PROGRAM_TRUTH.pilot);
+    expect(pilot.length).toBeGreaterThan(10);
+    expect(pilot.filter((x) => x.urban).length / pilot.length).toBeGreaterThan(co.filter((x) => x.urban).length / co.length + 0.2);
+    expect(ds.units.every((u) => u.program === co.find((x) => x.school === u.school)!.program)).toBe(true);
+  });
+
+  it('бағдарлама: жалпы әсер ≈ 0, қарапайым салыстыру оны асыра бағалайды', () => {
+    const res = comparePrograms(ds)!;
+    expect(res.ref).toBe(PROGRAM_TRUTH.current);
+    expect(res.controls).toEqual(['baseline', 'urban', 'lang', 'textbook']);
+    const p = res.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!;
+    expect(p.naive!).toBeGreaterThan(2.5);
+    expect(p.lo!).toBeLessThan(PROGRAM_TRUTH.overall);
+    expect(p.hi!).toBeGreaterThan(PROGRAM_TRUTH.overall);
+    expect(p.verdict).toBe('unproven');
+  });
+
+  it('бағдарлама: бөлімдердегі салынған әсер табылады', () => {
+    const cells = programsBySection(ds, 'ru');
+    const cell = (sec: string) => cells.find((c) => c.section === sec)!.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!;
+    const [better, worse] = PROGRAM_TRUTH.sections;
+    const b = cell(better.sectionRu);
+    expect(b.verdict).toBe('better');
+    expect(b.lo!).toBeLessThan(better.value);
+    expect(b.hi!).toBeGreaterThan(better.value);
+    const w = cell(worse.sectionRu);
+    // Шағын теріс әсер: түзетілген баға теріс, ал қарапайым айырма оң (мектептер құрамы)
+    expect(w.adj!).toBeLessThan(0);
+    expect(w.naive!).toBeGreaterThan(0);
+    expect(w.flipped).toBe(true);
+    expect(w.lo!).toBeLessThan(worse.value);
+    expect(w.hi!).toBeGreaterThan(worse.value);
+    // Басқа бөлімдерде пилот «мәнді жоғары» деп жарияланбайды
+    for (const c of cells) if (!PROGRAM_TRUTH.sections.some((x) => x.sectionRu === c.section)) expect(c.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!.verdict).toBe('unproven');
+  });
+
+  it('бағдарлама: әсері салынбаған пәндерде пилот «мәнді» деп табылмайды', () => {
+    for (const spec of COURSES.filter((c) => !c.pilot)) {
+      const p = comparePrograms(generateCourse(spec))!.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!;
+      expect(p.verdict).toBe('unproven');
+    }
+  });
+
+  it('бағдарлама: дерек жоқ болса салыстыру жоқ', () => {
+    const none = { ...ds, units: ds.units.map((u) => ({ ...u, program: '' })) };
+    expect(comparePrograms(none)).toBeNull();
+    expect(programsBySection(none, 'kk')).toEqual([]);
+    const one = { ...ds, units: ds.units.map((u) => ({ ...u, program: 'X' })) };
+    expect(comparePrograms(one)).toBeNull();
+    // Оқулықтарды салыстыру бағдарламаға тәуелді емес
+    expect(compareTextbooks(none, 'Оқулық A')).toEqual(compareTextbooks(ds, 'Оқулық A'));
+  });
+
   it('сүзгі: аз дерек қалғанда қорытынды жасалмайды', () => {
     const small = { ...ds, students: ds.students.filter((s) => s.unit < 3) };
     expect(topicStats(small).every((s) => s.status === 'nodata')).toBe(true);
@@ -143,6 +198,23 @@ describe('CSV', () => {
     expect(back!.students.length).toBe(ds.students.length);
     expect(back!.topics.map((t) => t.planned)).toEqual(ds.topics.map((t) => t.planned));
     expect(topicStats(back!).map((s) => Math.round(s.mastery))).toEqual(topicStats(ds).map((s) => Math.round(s.mastery)));
+  });
+
+  it('бағдарлама бағаны экспорт → импорттан өтеді, бағансыз файл да оқылады', () => {
+    const ds = generateDemo();
+    const { ds: back } = importData(exportResults(ds, 'kk'), exportCurriculum(ds, 'kk'));
+    expect(back!.units.map((u) => u.program)).toEqual(ds.units.map((u) => u.program));
+    const a = comparePrograms(ds)!.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!;
+    const b = comparePrograms(back!)!.rows.find((r) => r.name === PROGRAM_TRUTH.pilot)!;
+    expect(b.adj!).toBeCloseTo(a.adj!, 6);
+    // program бағанын алып тастаймыз: ескі форматтағы файл
+    const rows = parseCsv(exportResults(ds, 'kk'));
+    const pi = rows[0].indexOf('program');
+    const old = importData(toCsv(rows.map((r) => r.filter((_, k) => k !== pi))), exportCurriculum(ds, 'kk'));
+    expect(old.issues).toEqual([]);
+    expect(old.ds!.units.every((u) => u.program === '')).toBe(true);
+    expect(old.ds!.students.length).toBe(ds.students.length);
+    expect(comparePrograms(old.ds!)).toBeNull();
   });
 
   it('қате файлға түсінікті қате қайтарады', () => {
@@ -169,7 +241,7 @@ describe('пәндер, параллельдер, сыныптар', () => {
   it('бір параллельдің барлық пәнінде оқушылар, мектептер мен сыныптар бірдей', () => {
     for (const grade of [7, 8, 9]) {
       const sets = COURSES.filter((c) => c.grade === grade).map((c) => generateCourse(c));
-      const sig = (d: (typeof sets)[number]) => `${d.students.length}|${d.units.map((u) => `${u.school}/${u.name}/${u.textbook}/${u.lang}`).join(',')}|${d.students.map((x) => x.baseline).join(',')}`;
+      const sig = (d: (typeof sets)[number]) => `${d.students.length}|${d.units.map((u) => `${u.school}/${u.name}/${u.textbook}/${u.program}/${u.lang}`).join(',')}|${d.students.map((x) => x.baseline).join(',')}`;
       expect(new Set(sets.map(sig)).size).toBe(1);
     }
   });

@@ -33,9 +33,9 @@ export function Overview({ c }: { c: Ctx }) {
           <Icon name="sparkle" size={16} />
           {t('ИИ-дан сұрау', 'Спросить ИИ')}
         </button>
-        <button className="btn primary" onClick={() => window.print()}>
-          <Icon name="print" size={16} />
-          {t('Есепті басып шығару', 'Печать отчёта')}
+        <button className="btn primary" onClick={() => c.go('report')}>
+          <Icon name="report" size={16} />
+          {t('Есеп', 'Отчёт')}
         </button>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { predictEffect, recommendHours, HourTopic, TopicStat } from '../lib/analysis';
 import { download, toCsv } from '../lib/csv';
 import { sum } from '../lib/stats';
-import { Ctx, evidenceLabel, fmt, Note, Pill, signed, statusLabel, TFn } from './common';
+import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, signed, statusLabel, TFn } from './common';
 
 interface Snapshot {
   name: string;
@@ -69,19 +69,23 @@ export function why(t: TFn, s: TopicStat, h: HourTopic, delta: number, prereqNam
 
 export function Hours({ c }: { c: Ctx }) {
   const { t, ds, stats, lang, model } = c;
+  const g = glossary(t);
   const [hours, setHours] = useState<number[]>(c.recommended);
   const [locked, setLocked] = useState<Set<number>>(new Set());
   const [snaps, setSnaps] = useState<Snapshot[]>(loadSnaps);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const eff = predictEffect(model, hours);
   const balance = sum(hours) - model.total;
   const moved = sum(hours.map((h, i) => Math.max(0, h - model.topics[i].planned)));
   const isRec = hours.every((h, i) => h === c.recommended[i]);
+  const isPlan = hours.every((h, i) => h === model.topics[i].planned);
+  const rootName = (i: number) => (stats[i].prereq?.root ? ds.topics[stats[i].prereq!.i].name[lang] : null);
 
   const set = (i: number, v: number) => setHours(hours.map((h, k) => (k === i ? v : h)));
-  const toggle = (i: number) => {
-    const n = new Set(locked);
+  const toggle = (set0: Set<number>, i: number) => {
+    const n = new Set(set0);
     n.has(i) ? n.delete(i) : n.add(i);
-    setLocked(n);
+    return n;
   };
   const rowsCsv = () =>
     toCsv([
@@ -98,54 +102,59 @@ export function Hours({ c }: { c: Ctx }) {
         stats[i].hi.toFixed(1),
         stats[i].n,
         evidenceLabel(model.topics[i].evidence, t),
-        why(t, stats[i], model.topics[i], hours[i] - tp.planned, stats[i].prereq?.root ? ds.topics[stats[i].prereq!.i].name[lang] : null),
+        why(t, stats[i], model.topics[i], hours[i] - tp.planned, rootName(i)),
       ]),
     ]);
 
   return (
     <>
-      <div className="head">
-        <div>
-          <h1>{t('Оқу сағаттарын бөлу', 'Распределение учебных часов')}</h1>
-          <p className="lead">
-            {t(
-              'Жүйе жылдық сағатты өзгертпей, сағатты жақсы меңгерілген тақырыптан қосымша уақыт шынымен көмектесетін әлсіз тақырыпқа жылжытады. Әр ұсыныстың жанында дәлелі тұр; сағатты өзіңіз өзгертіп, болжамды бірден көре аласыз.',
-              'Система не меняет годовой объём, а переносит часы с хорошо усвоенных тем на слабые, где дополнительное время действительно помогает. Рядом с каждой рекомендацией — обоснование; часы можно менять вручную и сразу видеть прогноз.',
-            )}
-          </p>
+      <PageHead
+        title={t('Оқу сағаттарын бөлу', 'Распределение учебных часов')}
+        question={t(
+          'Жылдық сағатты өзгертпей, оны қай тақырыпқа көбірек берген жөн? Жүйе сағатты жақсы меңгерілген тақырыптан қосымша уақыт шынымен көмектесетін әлсіз тақырыпқа жылжытады. Сағатты өзіңіз де өзгертіп, болжамды бірден көре аласыз.',
+          'Не меняя годовой объём, каким темам стоит дать больше часов? Система переносит часы с хорошо усвоенных тем на слабые, где дополнительное время действительно помогает. Часы можно менять вручную и сразу видеть прогноз.',
+        )}
+      />
+
+      <div className="card sticky">
+        <div className="metrics">
+          <div className="metric">
+            <div className="v">{model.total}</div>
+            <div className="l">{t('жылдық сағат', 'часов в год')}</div>
+          </div>
+          <div className="metric">
+            <div className="v">{moved}</div>
+            <div className="l">{t('жылжытылды', 'перенесено')}</div>
+          </div>
+          <div className="metric">
+            <div className={`v ${eff.avg > 0 ? 'c-ok' : eff.avg < 0 ? 'c-hard' : ''}`}>
+              {signed(eff.avg)} <small className="muted">± {fmt(eff.avgHalf, 1)}</small>
+            </div>
+            <div className="l">{t('күтілетін орташа өзгеріс, балл', 'ожидаемое изменение, балл')}</div>
+          </div>
+          <div className={`metric ${balance ? 'bad' : ''}`}>
+            <div className="v balance">
+              {balance === 0 ? <Icon name="check" size={20} /> : <Icon name="alert" size={20} />}
+              {balance === 0 ? '' : signed(balance, 0)}
+            </div>
+            <div className="l">{balance === 0 ? t('теңгерім сақталған', 'баланс соблюдён') : balance > 0 ? t('сағат артық — азайтыңыз', 'лишние часы — уменьшите') : t('сағат жетпейді — қосыңыз', 'не хватает часов — добавьте')}</div>
+          </div>
+        </div>
+        <div className="actions">
+          <button className="btn primary" disabled={isRec && !locked.size} onClick={() => setHours(recommendHours(model, stats, locked, hours))}>
+            <Icon name={isRec && !locked.size ? 'check' : 'sparkle'} size={16} />
+            {locked.size ? t('Құлыппен қайта есептеу', 'Пересчитать с замками') : isRec ? t('Ұсыныс қолданылды', 'Рекомендация применена') : t('Ұсынысты қолдану', 'Применить рекомендацию')}
+          </button>
+          <button className="btn" disabled={isPlan} onClick={() => setHours(model.topics.map((x) => x.planned))}>
+            <Icon name="reset" size={16} />
+            {t('Жоспарға қайтару', 'Вернуть план')}
+          </button>
         </div>
       </div>
 
-      <section className="kpis">
-        <div className="kpi">
-          <b>{model.total}</b>
-          <span>{t('жылдық сағат (өзгермейді)', 'часов в год (не меняется)')}</span>
-        </div>
-        <div className="kpi">
-          <b>{moved}</b>
-          <span>{t('сағат жылжытылды', 'часов перенесено')}</span>
-        </div>
-        <div className="kpi">
-          <b className={eff.avg > 0 ? 'c-ok' : eff.avg < 0 ? 'c-hard' : ''}>{signed(eff.avg)}</b>
-          <span>
-            {t('күтілетін орташа өзгеріс, балл', 'ожидаемое среднее изменение, балл')} (± {fmt(eff.avgHalf, 1)})
-          </span>
-        </div>
-        <div className={`kpi ${balance ? 'kpi-warn' : ''}`}>
-          <b>{balance === 0 ? '✓' : signed(balance, 0)}</b>
-          <span>{balance === 0 ? t('теңгерім сақталған', 'баланс соблюдён') : balance > 0 ? t('сағат артық: азайтыңыз', 'лишние часы: уменьшите') : t('сағат жетпейді: қосыңыз', 'часов не хватает: добавьте')}</span>
-        </div>
-      </section>
-
-      <div className="actions">
-        <button className="btn primary" onClick={() => setHours(recommendHours(model, stats, locked, hours))}>
-          {locked.size ? t('Құлыптарды ескеріп қайта есептеу', 'Пересчитать с учётом замков') : t('Ұсынысты қолдану', 'Применить рекомендацию')}
-        </button>
-        <button className="btn" onClick={() => setHours(model.topics.map((x) => x.planned))}>
-          {t('Жоспарға қайтару', 'Вернуть план')}
-        </button>
+      <div className="actions" style={{ marginBottom: 16 }}>
         <button
-          className="btn"
+          className="btn sm"
           disabled={balance !== 0}
           onClick={() => {
             const name = `${t('Нұсқа', 'Вариант')} ${snaps.length + 1}`;
@@ -154,22 +163,26 @@ export function Hours({ c }: { c: Ctx }) {
             saveSnaps(next);
           }}
         >
+          <Icon name="save" size={15} />
           {t('Нұсқаны сақтау', 'Сохранить вариант')}
         </button>
-        <button className="btn" onClick={() => download('hours-plan.csv', rowsCsv())}>
-          {t('CSV жүктеп алу', 'Скачать CSV')}
+        <button className="btn sm" onClick={() => download('hours-plan.csv', rowsCsv())}>
+          <Icon name="download" size={15} />
+          CSV
         </button>
-        <button className="btn" onClick={() => window.print()}>
+        <button className="btn sm" onClick={() => window.print()}>
+          <Icon name="print" size={15} />
           {t('Басып шығару / PDF', 'Печать / PDF')}
         </button>
-        {!isRec && <span className="muted small">{t('Қолмен өзгертілген нұсқа', 'Вариант изменён вручную')}</span>}
+        {!isRec && !isPlan && <Pill kind="watch">{t('Қолмен өзгертілген', 'Изменено вручную')}</Pill>}
       </div>
 
       {snaps.length > 0 && (
         <div className="snaps">
+          <span className="small">{t('Сақталған нұсқалар:', 'Сохранённые варианты:')}</span>
           {snaps.map((s, k) => (
             <span key={k} className="snap">
-              <button className="link" onClick={() => setHours(ds.topics.map((tp, i) => s.hours[tp.id] ?? model.topics[i].planned))}>
+              <button className="name" onClick={() => setHours(ds.topics.map((tp, i) => s.hours[tp.id] ?? model.topics[i].planned))}>
                 {s.name}
               </button>
               <small className="muted">{s.date}</small>
@@ -189,17 +202,20 @@ export function Hours({ c }: { c: Ctx }) {
         </div>
       )}
 
-      <div className="scroll">
+      <div className="card tablecard">
         <table className="hours">
           <thead>
             <tr>
               <th>{t('Тақырып', 'Тема')}</th>
               <th className="num">{t('Жоспар', 'План')}</th>
-              <th className="num">{t('Ұсыныс', 'Рекомендация')}</th>
+              <th>{t('Ұсыныс', 'Рекомендация')}</th>
               <th className="num">Δ</th>
-              <th className="num">{t('Күтілетін өзгеріс, балл', 'Ожидаемое изменение, балл')}</th>
-              <th>{t('Неге?', 'Почему?')}</th>
-              <th title={t('Құлыптау: тақырып сағаты өзгермейді', 'Замок: часы темы не меняются')}>{t('Құлып', 'Замок')}</th>
+              <th className="num">{t('Болжам, балл', 'Прогноз, балл')}</th>
+              <th>
+                {t('Неге?', 'Почему?')}
+                <Hint text={g.evidence} />
+              </th>
+              <th>{t('Құлып', 'Замок')}</th>
             </tr>
           </thead>
           <tbody>
@@ -207,43 +223,53 @@ export function Hours({ c }: { c: Ctx }) {
               const m = model.topics[i];
               const d = hours[i] - tp.planned;
               const e = eff.per[i];
+              const isLocked = locked.has(i);
+              const open = expanded.has(i);
               return (
-                <tr key={tp.id} className={d > 0 ? 'up' : d < 0 ? 'down' : ''}>
-                  <td>
+                <tr key={tp.id} className={`${d > 0 ? 'up' : d < 0 ? 'down' : ''} ${isLocked ? 'locked' : ''}`}>
+                  <td className="tn">
                     <b>{tp.name[lang]}</b>
-                    <br />
                     <Pill kind={stats[i].status}>{statusLabel(stats[i].status, t)}</Pill>
                   </td>
                   <td className="num">{tp.planned}</td>
-                  <td className="num">
+                  <td>
                     <span className="stepper">
-                      <button disabled={hours[i] <= m.min || locked.has(i)} onClick={() => set(i, hours[i] - 1)} aria-label="−1">
+                      <button disabled={hours[i] <= m.min || isLocked} onClick={() => set(i, hours[i] - 1)} aria-label={t(`${tp.name[lang]}: бір сағатқа азайту`, `${tp.name[lang]}: уменьшить на час`)}>
                         −
                       </button>
-                      <b>{hours[i]}</b>
-                      <button disabled={hours[i] >= m.max || locked.has(i)} onClick={() => set(i, hours[i] + 1)} aria-label="+1">
+                      <b className="tnum">{hours[i]}</b>
+                      <button disabled={hours[i] >= m.max || isLocked} onClick={() => set(i, hours[i] + 1)} aria-label={t(`${tp.name[lang]}: бір сағатқа көбейту`, `${tp.name[lang]}: увеличить на час`)}>
                         +
                       </button>
                     </span>
-                    <small className="muted">
-                      {m.min}–{m.max}
+                    <small className="muted" style={{ display: 'block', marginTop: 4 }}>
+                      {t('шек', 'пределы')} {m.min}–{m.max}
                     </small>
                   </td>
-                  <td className={`num ${d > 0 ? 'c-ok' : d < 0 ? 'c-hard' : 'muted'}`}>
-                    <b>{d === 0 ? '0' : signed(d, 0)}</b>
+                  <td className="num">
+                    <span className={`delta ${d > 0 ? 'up' : d < 0 ? 'down' : 'zero'}`}>{d === 0 ? '0' : signed(d, 0)}</span>
                   </td>
                   <td className="num">
                     {d === 0 ? (
                       <span className="muted">—</span>
                     ) : (
                       <>
-                        <b>{signed(e.delta)}</b> <small className="muted">± {fmt(e.half, 1)}</small>
+                        <b className={e.delta > 0 ? 'c-ok' : e.delta < 0 ? 'c-hard' : ''}>{signed(e.delta)}</b>
+                        <small>± {fmt(e.half, 1)}</small>
                       </>
                     )}
                   </td>
-                  <td className="why">{why(t, stats[i], m, d, stats[i].prereq?.root ? ds.topics[stats[i].prereq!.i].name[lang] : null)}</td>
+                  <td className={`why ${open ? 'open' : ''}`}>
+                    <span className="txt">{why(t, stats[i], m, d, rootName(i))}</span>
+                    <button className="more" onClick={() => setExpanded(toggle(expanded, i))} aria-expanded={open}>
+                      {open ? t('Жасыру', 'Свернуть') : t('Толығырақ', 'Подробнее')}
+                    </button>
+                  </td>
                   <td>
-                    <input type="checkbox" checked={locked.has(i)} onChange={() => toggle(i)} aria-label={t('Құлыптау', 'Закрепить')} />
+                    <label className="lock">
+                      <input type="checkbox" checked={isLocked} onChange={() => setLocked(toggle(locked, i))} />
+                      <span className="sr-only">{t('Құлыптау', 'Закрепить')}</span>
+                    </label>
                   </td>
                 </tr>
               );

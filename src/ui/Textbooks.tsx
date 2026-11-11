@@ -1,44 +1,63 @@
 import { useMemo } from 'react';
 import { MIN_STUDENTS, MIN_UNITS, textbooksBySection } from '../lib/analysis';
-import { Ctx, fmt, Note, Pill, signed, verdictLabel } from './common';
+import { Ctx, fmt, glossary, Hint, Icon, Note, PageHead, Pill, signed, verdictLabel } from './common';
 
 const pillOf = { ref: 'nodata', better: 'ok', worse: 'hard', unproven: 'watch', nodata: 'nodata' } as const;
 
-export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string; setRefBook: (s: string) => void }) {
+export function Textbooks({ c, setRefBook }: { c: Ctx; setRefBook: (s: string) => void }) {
   const { t, ds, lang } = c;
+  const g = glossary(t);
   const tb = c.textbooks;
+  const refBook = tb?.ref ?? '';
   const sections = useMemo(() => textbooksBySection(ds, lang, refBook || undefined), [ds, lang, refBook]);
+
+  const head = (tools?: JSX.Element) => (
+    <PageHead
+      title={t('Оқулықтарды салыстыру', 'Сравнение учебников')}
+      question={t(
+        'Қай оқулықпен оқыған оқушылар жақсы нәтиже көрсетеді? Оқулықты мектеп таңдайды, сондықтан біз бастапқы деңгейі мен жағдайы бірдей оқушыларды салыстырамыз — мектептерді емес, оқулықтарды.',
+        'С каким учебником ученики показывают лучший результат? Учебник выбирает школа, поэтому мы сравниваем учеников с одинаковым входным уровнем и условиями — учебники, а не школы.',
+      )}
+    >
+      {tools}
+    </PageHead>
+  );
 
   if (!tb || !tb.ref) {
     return (
-      <Note kind="warn">
-        {t(
-          `Оқулықтарды салыстыруға дерек жеткіліксіз: әр оқулыққа кемінде ${MIN_STUDENTS} оқушы мен ${MIN_UNITS} сынып тобы керек.`,
-          `Недостаточно данных для сравнения учебников: на каждый учебник нужно не менее ${MIN_STUDENTS} учеников и ${MIN_UNITS} классов.`,
-        )}
-      </Note>
+      <>
+        {head()}
+        <Note kind="warn">
+          {t(
+            `Оқулықтарды салыстыруға дерек жеткіліксіз: әр оқулыққа кемінде ${MIN_STUDENTS} оқушы мен ${MIN_UNITS} сынып тобы керек.`,
+            `Недостаточно данных для сравнения учебников: на каждый учебник нужно не менее ${MIN_STUDENTS} учеников и ${MIN_UNITS} классов.`,
+          )}
+        </Note>
+      </>
     );
   }
 
-  const cmp = tb.rows.filter((r) => r.adj !== null && r.verdict !== 'ref');
+  const others = tb.rows.filter((r) => r.verdict !== 'ref');
+  const better = others.filter((r) => r.verdict === 'better');
+  const worse = others.filter((r) => r.verdict === 'worse');
+  const unproven = others.filter((r) => r.verdict === 'unproven');
+  const nodata = others.filter((r) => r.verdict === 'nodata');
+  const cmp = others.filter((r) => r.adj !== null);
   const span = Math.max(4, ...cmp.flatMap((r) => [Math.abs(r.lo!), Math.abs(r.hi!), Math.abs(r.naive!)])) * 1.1;
-  const pos = (v: number) => 50 + (v / span) * 50;
+  const pos = (v: number) => Math.min(100, Math.max(0, 50 + (v / span) * 50));
   const ctrl = { baseline: t('бастапқы диагностика балы', 'балл входной диагностики'), urban: t('қала/ауыл', 'город/село'), lang: t('оқыту тілі', 'язык обучения') };
   const flipped = tb.rows.find((r) => r.flipped);
 
+  const parts: string[] = [];
+  if (better.length) parts.push(t(`${better.map((r) => r.name).join(', ')} — мәнді жоғары`, `${better.map((r) => r.name).join(', ')} — значимо выше`));
+  if (worse.length) parts.push(t(`${worse.map((r) => r.name).join(', ')} — мәнді төмен`, `${worse.map((r) => r.name).join(', ')} — значимо ниже`));
+  if (unproven.length) parts.push(t(`${unproven.map((r) => r.name).join(', ')} — айырма дәлелденбеген`, `${unproven.map((r) => r.name).join(', ')} — разница не доказана`));
+  if (nodata.length) parts.push(t(`${nodata.map((r) => r.name).join(', ')} — дерек жеткіліксіз`, `${nodata.map((r) => r.name).join(', ')} — мало данных`));
+
   return (
     <>
-      <div className="head">
-        <div>
-          <h1>{t('Оқулықтарды салыстыру', 'Сравнение учебников')}</h1>
-          <p className="lead">
-            {t(
-              'Оқулықты мектеп таңдайды, ал мықты мектептер басқаша таңдауы мүмкін. Сондықтан орташа баллды тікелей салыстыру оқулықты емес, мектептерді салыстырады. Біз екі көріністі қатар көрсетеміз.',
-              'Учебник выбирает школа, и сильные школы могут выбирать иначе. Поэтому прямое сравнение средних баллов сравнивает школы, а не учебники. Мы показываем обе картины рядом.',
-            )}
-          </p>
-        </div>
-        <label className="pick">
+      {head(
+        <label className="field">
           {t('Салыстыру негізі', 'База сравнения')}
           <select value={tb.ref} onChange={(e) => setRefBook(e.target.value)}>
             {tb.rows
@@ -47,7 +66,20 @@ export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string;
                 <option key={r.name}>{r.name}</option>
               ))}
           </select>
-        </label>
+        </label>,
+      )}
+
+      <div className="card verdict">
+        <span className="badge">
+          <Icon name={better.length || worse.length ? 'check' : 'info'} size={20} />
+        </span>
+        <div>
+          <p className="headline">{t(`${tb.ref}-мен салыстырғанда: `, `По сравнению с ${tb.ref}: `) + parts.join('; ') + '.'}</p>
+          <p>
+            {t('Түзету факторлары:', 'Поправка на:')} {tb.controls.map((x) => ctrl[x]).join(', ') || '—'}.{' '}
+            {t('Стандарт қателер мектеп деңгейінде кластерленген.', 'Стандартные ошибки кластеризованы по школам.')}
+          </p>
+        </div>
       </div>
 
       {!ds.hasBaseline && (
@@ -58,30 +90,59 @@ export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string;
           )}
         </Note>
       )}
+
       {flipped && (
-        <Note kind="warn">
-          <b>{t('Қарапайым салыстыру қате қорытындыға әкеледі. ', 'Простое сравнение ведёт к ошибочному выводу. ')}</b>
-          {t(
-            `Орташа балл бойынша ${flipped.name} ${tb.ref}-дан ${fmt(Math.abs(flipped.naive!), 1)} балл ${flipped.naive! < 0 ? 'төмен' : 'жоғары'}. Бірақ бастапқы деңгейі мен жағдайы бірдей оқушыларды салыстырғанда ол ${fmt(Math.abs(flipped.adj!), 1)} балл ${flipped.adj! > 0 ? 'жоғары' : 'төмен'} нәтиже береді.`,
-            `По средним баллам ${flipped.name} на ${fmt(Math.abs(flipped.naive!), 1)} балла ${flipped.naive! < 0 ? 'ниже' : 'выше'}, чем ${tb.ref}. Но при сравнении учеников с одинаковым входным уровнем и условиями он даёт результат на ${fmt(Math.abs(flipped.adj!), 1)} балла ${flipped.adj! > 0 ? 'выше' : 'ниже'}.`,
-          )}
-        </Note>
+        <div className="compare">
+          <div className="card side wrong">
+            <div className="lbl">
+              {t('Қарапайым салыстыру', 'Простое сравнение')}
+              <Hint text={g.naive} />
+            </div>
+            <div className="big">
+              {signed(flipped.naive)} {t('балл', 'балла')}
+            </div>
+            <p>{t(`${flipped.name} орташа баллы ${tb.ref}-дан ${flipped.naive! < 0 ? 'төмен' : 'жоғары'} — бірақ бұл мектептер құрамының айырмасы.`, `Средний балл ${flipped.name} ${flipped.naive! < 0 ? 'ниже' : 'выше'}, чем у ${tb.ref}, — но это разница в составе школ.`)}</p>
+          </div>
+          <div className="vs" aria-hidden="true">
+            <Icon name="arrow" size={22} />
+          </div>
+          <div className="card side right">
+            <div className="lbl">
+              {t('Түзетілген салыстыру', 'Сравнение с поправкой')}
+              <Hint text={g.adjusted} />
+            </div>
+            <div className={`big ${flipped.adj! > 0 ? 'c-ok' : 'c-hard'}`}>
+              {signed(flipped.adj)} {t('балл', 'балла')}
+            </div>
+            <p>
+              {t('Бастапқы деңгейі мен жағдайы бірдей оқушыларда', 'У учеников с одинаковым входным уровнем и условиями')} · 95% {t('СА', 'ДИ')} {signed(flipped.lo)}…{signed(flipped.hi)}
+            </p>
+          </div>
+        </div>
       )}
 
-      <div className="scroll">
+      <div className="card tablecard">
         <table>
           <thead>
             <tr>
               <th>{t('Оқулық', 'Учебник')}</th>
               <th className="num">{t('Оқушы', 'Учеников')}</th>
-              <th className="num">{t('Сынып тобы', 'Классов')}</th>
+              <th className="num">{t('Сынып', 'Классов')}</th>
               <th className="num">{t('Орташа балл', 'Средний балл')}</th>
-              <th className="num">{t('Қарапайым айырма', 'Простая разница')}</th>
-              <th className="num">{t('Түзетілген әсер (95% СА)', 'Эффект с поправкой (95% ДИ)')}</th>
+              <th className="num">
+                {t('Қарапайым', 'Простая')}
+                <Hint text={g.naive} />
+              </th>
+              <th className="num">
+                {t('Түзетілген', 'С поправкой')}
+                <Hint text={g.adjusted} />
+              </th>
               <th className="forest-h">
-                <span>−{fmt(span)}</span>
-                <span>0</span>
-                <span>+{fmt(span)}</span>
+                <div className="ax">
+                  <span>−{fmt(span)}</span>
+                  <span>0</span>
+                  <span>+{fmt(span)}</span>
+                </div>
               </th>
               <th>{t('Қорытынды', 'Вывод')}</th>
             </tr>
@@ -101,13 +162,12 @@ export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string;
                     '—'
                   ) : (
                     <>
-                      <b>{signed(r.adj)}</b>{' '}
+                      <b>{signed(r.adj)}</b>
                       <small>
-                        ({signed(r.lo)}…{signed(r.hi)})
+                        {signed(r.lo)}…{signed(r.hi)}
                       </small>
-                      <br />
-                      <small className="muted">
-                        {signed(r.sdUnits, 2)} SD · p = {r.p! < 0.001 ? '<0,001' : fmt(r.p, 3)}
+                      <small>
+                        {signed(r.sdUnits, 2)} SD · p {r.p! < 0.001 ? '< 0,001' : `= ${fmt(r.p, 3)}`}
                       </small>
                     </>
                   )}
@@ -117,9 +177,9 @@ export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string;
                     <i className="zero" />
                     {r.adj !== null && r.verdict !== 'ref' && (
                       <>
-                        <i className="naive" style={{ left: `${pos(r.naive!)}%` }} />
                         <i className={`range r-${r.verdict}`} style={{ left: `${pos(r.lo!)}%`, width: `${pos(r.hi!) - pos(r.lo!)}%` }} />
-                        <i className={`dot r-${r.verdict}`} style={{ left: `${pos(r.adj)}%` }} />
+                        <i className="naive" style={{ left: `${pos(r.naive!)}%` }} />
+                        <i className={`pt r-${r.verdict}`} style={{ left: `${pos(r.adj)}%` }} />
                       </>
                     )}
                   </div>
@@ -132,42 +192,53 @@ export function Textbooks({ c, refBook, setRefBook }: { c: Ctx; refBook: string;
           </tbody>
         </table>
       </div>
-      <p className="small">
-        <span className="key key-naive" /> {t('қарапайым айырма', 'простая разница')} &nbsp; <span className="key key-adj" /> {t('түзетілген әсер және 95% сенім аралығы', 'эффект с поправкой и 95% доверительный интервал')}.{' '}
-        {t('Түзету факторлары:', 'Поправка на:')} {tb.controls.map((x) => ctrl[x]).join(', ') || '—'}. {t('Стандарт қателер мектеп деңгейінде кластерленген.', 'Стандартные ошибки кластеризованы по школам.')}
-      </p>
+      <div className="legend">
+        <span>
+          <i className="k-naive" /> {t('қарапайым айырма', 'простая разница')}
+        </span>
+        <span>
+          <i className="k-adj" /> {t('түзетілген әсер және 95% сенім аралығы', 'эффект с поправкой и 95% доверительный интервал')}
+        </span>
+        <span>
+          SD <Hint text={g.sd} />
+        </span>
+        <span>
+          p <Hint text={g.p} />
+        </span>
+      </div>
 
       <h2>{t('Бөлімдер бойынша: оқулықтың қай бөлімі күшті?', 'По разделам: какой раздел учебника сильнее?')}</h2>
-      <div className="scroll">
+      <div className="card tablecard">
         <table>
           <thead>
             <tr>
               <th>{t('Бөлім', 'Раздел')}</th>
-              {tb.rows
-                .filter((r) => r.verdict !== 'ref')
-                .map((r) => (
-                  <th key={r.name} className="num">
-                    {r.name}
-                  </th>
-                ))}
+              {others.map((r) => (
+                <th key={r.name} className="num">
+                  {r.name}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {sections.map((s) => (
               <tr key={s.section}>
                 <td>{s.section}</td>
-                {tb.rows
-                  .filter((r) => r.verdict !== 'ref')
-                  .map((r) => {
-                    const cell = s.rows.find((x) => x.name === r.name);
-                    if (!cell || cell.adj === null) return <td key={r.name} className="num muted">{t('дерек аз', 'мало данных')}</td>;
-                    const sig = cell.verdict === 'better' || cell.verdict === 'worse';
+                {others.map((r) => {
+                  const cell = s.rows.find((x) => x.name === r.name);
+                  if (!cell || cell.adj === null)
                     return (
-                      <td key={r.name} className={`num ${sig ? (cell.verdict === 'better' ? 'cell-ok' : 'cell-hard') : 'muted'}`}>
-                        {sig ? <b>{signed(cell.adj)}</b> : signed(cell.adj)}
+                      <td key={r.name} className="num muted">
+                        {t('дерек аз', 'мало данных')}
                       </td>
                     );
-                  })}
+                  const sig = cell.verdict === 'better' || cell.verdict === 'worse';
+                  return (
+                    <td key={r.name} className={`num ${sig ? (cell.verdict === 'better' ? 'cell-ok' : 'cell-hard') : 'muted'}`}>
+                      {sig ? <b>{signed(cell.adj)}</b> : signed(cell.adj)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

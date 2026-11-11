@@ -3,9 +3,35 @@ import type { Dataset } from '../lib/types';
 import { CURRICULUM_COLS, download, exportCurriculum, exportResults, ImportIssue, importData, RESULT_COLS } from '../lib/csv';
 import { HARD, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
 import { generateDemo } from '../lib/generate';
-import { Ctx, Note } from './common';
+import { Ctx, Icon, Note, PageHead, TFn } from './common';
 
-const readFile = (f: File) => f.text();
+function Drop({ label, hint, file, onFile, t }: { label: string; hint: string; file: File | null; onFile: (f: File | null) => void; t: TFn }) {
+  const [over, setOver] = useState(false);
+  return (
+    <label
+      className={`drop ${over ? 'over' : ''} ${file ? 'has' : ''}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        onFile(e.dataTransfer.files?.[0] ?? null);
+      }}
+    >
+      <span className="ic">
+        <Icon name={file ? 'check' : 'upload'} size={20} />
+      </span>
+      <span>
+        <b>{file ? file.name : label}</b>
+        <small>{file ? `${(file.size / 1024).toFixed(0)} KB · ${t('басқа файл таңдау үшін басыңыз', 'нажмите, чтобы выбрать другой файл')}` : hint}</small>
+      </span>
+      <input type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+    </label>
+  );
+}
 
 export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Dataset; onLoad: (ds: Dataset) => void; onReset: () => void }) {
   const { t, lang } = c;
@@ -25,7 +51,7 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
 
   const run = async () => {
     if (!results) return;
-    const r = importData(await readFile(results), plan ? await readFile(plan) : undefined, results.name);
+    const r = importData(await results.text(), plan ? await plan.text() : undefined, results.name);
     setIssues(r.issues);
     if (r.ds) {
       onLoad(r.ds);
@@ -49,52 +75,75 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
 
   return (
     <>
-      <div className="head">
-        <div>
-          <h1>{t('Дерек', 'Данные')}</h1>
-          <p className="lead">
+      <PageHead
+        title={t('Дерек', 'Данные')}
+        question={t(
+          'Өз мектептеріңіздің нәтижесін талдағыңыз келе ме? CSV файлын жүктеңіз: ол браузерде өңделеді және ешқайда жіберілмейді.',
+          'Хотите проанализировать результаты своих школ? Загрузите CSV-файл: он обрабатывается в браузере и никуда не отправляется.',
+        )}
+      />
+
+      <section className="grid2">
+        <article className="card pad">
+          <div className="stephead">
+            <span className="n">1</span>
+            <h3>{t('Үлгіні жүктеп алыңыз', 'Скачайте шаблон')}</h3>
+          </div>
+          <p className="small">
             {t(
-              'Өз нәтижелеріңізді CSV форматында жүктеңіз. Файл браузерде өңделеді және ешқайда жіберілмейді. Excel-де «CSV UTF-8» ретінде сақтаңыз; үтір де, нүктелі үтір де қабылданады.',
-              'Загрузите свои результаты в формате CSV. Файл обрабатывается в браузере и никуда не отправляется. В Excel сохраняйте как «CSV UTF-8»; подходит и запятая, и точка с запятой.',
+              'Үлгілер демо дерегінен жасалған: форматты көру үшін ашып қараңыз. Excel-де «CSV UTF-8» ретінде сақтаңыз; үтір де, нүктелі үтір де қабылданады.',
+              'Шаблоны собраны из демо-данных: откройте, чтобы увидеть формат. В Excel сохраняйте как «CSV UTF-8»; подходит и запятая, и точка с запятой.',
             )}
           </p>
-        </div>
-      </div>
-
-      <section className="cards two">
-        <article className="card">
-          <h2>{t('1. Үлгіні жүктеп алыңыз', '1. Скачайте шаблон')}</h2>
-          <p className="small">{t('Үлгілер демо дерегінен жасалған: форматты көру үшін ашып қараңыз.', 'Шаблоны собраны из демо-данных: откройте, чтобы увидеть формат.')}</p>
           <div className="actions">
             <button className="btn" onClick={() => download('results-template.csv', exportResults(sample, lang, 2))}>
-              results.csv
+              <Icon name="download" size={16} /> results.csv
             </button>
             <button className="btn" onClick={() => download('curriculum-template.csv', exportCurriculum(sample, lang))}>
-              curriculum.csv
+              <Icon name="download" size={16} /> curriculum.csv
             </button>
           </div>
         </article>
-        <article className="card">
-          <h2>{t('2. Файлдарды таңдаңыз', '2. Выберите файлы')}</h2>
-          <label className="file">
-            <span>{t('Нәтижелер (міндетті)', 'Результаты (обязательно)')}</span>
-            <input type="file" accept=".csv,text/csv" onChange={(e) => setResults(e.target.files?.[0] ?? null)} />
-          </label>
-          <label className="file">
-            <span>{t('Оқу жоспары (міндетті емес)', 'Учебный план (необязательно)')}</span>
-            <input type="file" accept=".csv,text/csv" onChange={(e) => setPlan(e.target.files?.[0] ?? null)} />
-          </label>
+
+        <article className="card pad">
+          <div className="stephead">
+            <span className="n">2</span>
+            <h3>{t('Файлдарды жүктеңіз', 'Загрузите файлы')}</h3>
+          </div>
+          <Drop
+            t={t}
+            file={results}
+            onFile={setResults}
+            label={t('Нәтижелер — results.csv', 'Результаты — results.csv')}
+            hint={t('Міндетті · файлды осында сүйреңіз немесе басып таңдаңыз', 'Обязательно · перетащите файл сюда или нажмите')}
+          />
+          <Drop
+            t={t}
+            file={plan}
+            onFile={setPlan}
+            label={t('Оқу жоспары — curriculum.csv', 'Учебный план — curriculum.csv')}
+            hint={t('Міндетті емес · жоспарлы сағат пен тірек тақырыптар', 'Необязательно · плановые часы и опорные темы')}
+          />
           <div className="actions">
             <button className="btn primary" disabled={!results} onClick={run}>
+              <Icon name="sparkle" size={16} />
               {t('Жүктеу және талдау', 'Загрузить и проанализировать')}
             </button>
             {!source.synthetic && (
               <button className="btn" onClick={onReset}>
+                <Icon name="reset" size={16} />
                 {t('Демо дерекке қайту', 'Вернуться к демо')}
               </button>
             )}
           </div>
-          {loaded && <Note>{t('Жүктелді: ', 'Загружено: ') + loaded}</Note>}
+          {loaded && (
+            <Note>
+              {t('Жүктелді: ', 'Загружено: ') + loaded}.{' '}
+              <button className="btn ghost sm" onClick={() => c.go('overview')}>
+                {t('Шолуды ашу', 'Открыть обзор')} <Icon name="arrow" size={14} />
+              </button>
+            </Note>
+          )}
           {issues.map((i, k) => (
             <Note key={k} kind="warn">
               {issueText(i)}
@@ -103,8 +152,8 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
         </article>
       </section>
 
-      <h2>results.csv</h2>
-      <div className="scroll">
+      <h2>{t('results.csv форматы', 'Формат results.csv')}</h2>
+      <div className="card tablecard">
         <table>
           <thead>
             <tr>
@@ -120,7 +169,7 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
                   <code>{col}</code>
                 </td>
                 <td>{lang === 'kk' ? desc[col][0] : desc[col][1]}</td>
-                <td>{desc[col][2] ? '✓' : ''}</td>
+                <td>{desc[col][2] ? <Icon name="check" size={16} /> : <span className="muted">—</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -132,36 +181,44 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
       </p>
 
       <h2>{t('Әдістеме қысқаша', 'Методика кратко')}</h2>
-      <ul className="method">
-        <li>
-          <b>{t('Тақырыптар.', 'Темы.')}</b>{' '}
-          {t(
-            `Меңгеру үлесі — ${PASS}+ балл алғандар. «Қиын» < ${HARD}%, «назарда» ${HARD}–${WATCH}%. 95% сенім аралығы сынып топтарын қайта іріктеу (кластерлік бутстрэп) арқылы есептеледі, себебі бір сыныптың оқушылары тәуелсіз емес. Тірек тақырыппен байланыс бастапқы деңгейді есептен шығарған соң бағаланады.`,
-            `Доля усвоивших — набравшие ${PASS}+ баллов. «Сложная» < ${HARD}%, «в зоне риска» ${HARD}–${WATCH}%. 95% доверительный интервал считается перевыборкой классов (кластерный бутстрэп), так как ученики одного класса не независимы. Связь с опорной темой оценивается после исключения входного уровня.`,
-          )}
-        </li>
-        <li>
-          <b>{t('Оқулықтар.', 'Учебники.')}</b>{' '}
-          {t(
-            'Регрессия: балл ~ оқулық + бастапқы диагностика + қала/ауыл + оқыту тілі; стандарт қателер мектеп бойынша кластерленген. Қарапайым айырма мен түзетілген әсер қатар көрсетіледі, қорытындылары қарама-қарсы болса, ескерту шығады.',
-            'Регрессия: балл ~ учебник + входная диагностика + город/село + язык обучения; стандартные ошибки кластеризованы по школам. Простая разница и эффект с поправкой показаны рядом; если выводы противоположны, выводится предупреждение.',
-          )}
-        </li>
-        <li>
-          <b>{t('Сағаттар.', 'Часы.')}</b>{' '}
-          {t(
-            'Әр тақырып бойынша: сынып балы ~ ln(нақты сағат) + бастапқы деңгей + қала/ауыл. Шулы бағалар ортақ мәнге қарай сығылады (эмпирикалық Байес). Сағат бір-бірлеп ең пайдалы жерге жылжытылады, жылдық сома сақталады, шек ±30%.',
-            'По каждой теме: балл класса ~ ln(фактические часы) + входной уровень + город/село. Шумные оценки сжимаются к общему значению (эмпирический Байес). Часы переносятся по одному туда, где польза максимальна; годовой объём сохраняется, предел ±30%.',
-          )}
-        </li>
-        <li>
-          <b>{t('Сақтық.', 'Осторожность.')}</b>{' '}
-          {t(
-            `Тақырыпқа ${MIN_STUDENTS} оқушыдан немесе ${MIN_UNITS} сынып тобынан аз болса, қорытынды жасалмайды. Бастапқы деңгей болмаса, оқулық айырмасы «дәлелденбеген» деп көрсетіледі.`,
-            `Если по теме меньше ${MIN_STUDENTS} учеников или ${MIN_UNITS} классов, вывод не делается. Без входного уровня разница учебников показывается как «не доказана».`,
-          )}
-        </li>
-      </ul>
+      <div className="method">
+        <div className="card">
+          <h3>{t('Тақырыптар', 'Темы')}</h3>
+          <p>
+            {t(
+              `Меңгеру үлесі — ${PASS}+ балл алғандар. «Қиын» < ${HARD}%, «назарда» ${HARD}–${WATCH}%. 95% сенім аралығы сынып топтарын қайта іріктеу (кластерлік бутстрэп) арқылы есептеледі. Тірек тақырыппен байланыс бастапқы деңгейді шығарған соң бағаланады.`,
+              `Доля усвоивших — набравшие ${PASS}+ баллов. «Сложная» < ${HARD}%, «в зоне риска» ${HARD}–${WATCH}%. 95% доверительный интервал — перевыборка классов (кластерный бутстрэп). Связь с опорной темой оценивается после исключения входного уровня.`,
+            )}
+          </p>
+        </div>
+        <div className="card">
+          <h3>{t('Оқулықтар', 'Учебники')}</h3>
+          <p>
+            {t(
+              'Регрессия: балл ~ оқулық + бастапқы диагностика + қала/ауыл + оқыту тілі; стандарт қателер мектеп бойынша кластерленген. Қарапайым айырма мен түзетілген әсер қатар көрсетіледі.',
+              'Регрессия: балл ~ учебник + входная диагностика + город/село + язык обучения; стандартные ошибки кластеризованы по школам. Простая разница и эффект с поправкой показаны рядом.',
+            )}
+          </p>
+        </div>
+        <div className="card">
+          <h3>{t('Сағаттар', 'Часы')}</h3>
+          <p>
+            {t(
+              'Әр тақырып: сынып балы ~ ln(нақты сағат) + бастапқы деңгей + қала/ауыл. Шулы бағалар ортақ мәнге сығылады (эмпирикалық Байес). Сағат ең пайдалы жерге жылжытылады, жылдық сома сақталады, шек ±30%.',
+              'По каждой теме: балл класса ~ ln(фактические часы) + входной уровень + город/село. Шумные оценки сжимаются к общему значению (эмпирический Байес). Часы переносятся туда, где польза максимальна; годовой объём сохраняется, предел ±30%.',
+            )}
+          </p>
+        </div>
+        <div className="card">
+          <h3>{t('Сақтық', 'Осторожность')}</h3>
+          <p>
+            {t(
+              `Тақырыпқа ${MIN_STUDENTS} оқушыдан немесе ${MIN_UNITS} сынып тобынан аз болса, қорытынды жасалмайды. Бастапқы деңгей болмаса, оқулық айырмасы «дәлелденбеген» деп көрсетіледі.`,
+              `Если по теме меньше ${MIN_STUDENTS} учеников или ${MIN_UNITS} классов, вывод не делается. Без входного уровня разница учебников показывается как «не доказана».`,
+            )}
+          </p>
+        </div>
+      </div>
     </>
   );
 }

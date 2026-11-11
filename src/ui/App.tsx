@@ -10,6 +10,7 @@ import { Topics } from './Topics';
 import { Textbooks } from './Textbooks';
 import { Hours } from './Hours';
 import { DataPage } from './DataPage';
+import { Report } from './Report';
 import { Assistant } from './Assistant';
 import { Search, SearchItem } from './Search';
 
@@ -154,6 +155,7 @@ export function App() {
   const searchItems: SearchItem[] = useMemo(() => {
     const items: SearchItem[] = [];
     pages.forEach(([id, label, icon]) => items.push({ id: `p-${id}`, label, hint: t('бет', 'страница'), icon, run: () => go(id) }));
+    items.push({ id: 'p-report', label: t('Әдіскер есебі', 'Отчёт методиста'), hint: t('бет · басып шығару', 'страница · печать'), icon: 'report', run: () => go('report') });
     items.push({ id: 'p-data', label: t('Дерек жүктеу', 'Загрузка данных'), hint: t('бет', 'страница'), icon: 'data', run: () => go('data') });
     items.push({ id: 'p-ai', label: t('ИИ көмекші', 'ИИ-помощник'), hint: t('құрал', 'инструмент'), icon: 'sparkle', run: () => openAssistant() });
     source.topics.forEach((tp, i) => items.push({ id: `t-${i}`, label: tp.name[lang], hint: `${t('тақырып', 'тема')} · ${tp.section[lang]}`, icon: 'topics', run: () => openTopic(i) }));
@@ -164,7 +166,7 @@ export function App() {
   }, [source, schools, lang]);
 
   const filtered = !scope.school && (filter.loc !== 'all' || filter.lang !== 'all');
-  const titleOf: Record<Tab, string> = { overview: t('Басқару панелі', 'Панель управления'), topics: t('Тақырыптар', 'Темы'), textbooks: t('Оқулықтар', 'Учебники'), hours: t('Оқу сағаттары', 'Учебные часы'), data: t('Дерек', 'Данные') };
+  const titleOf: Record<Tab, string> = { overview: t('Басқару панелі', 'Панель управления'), topics: t('Тақырыптар', 'Темы'), textbooks: t('Оқулықтар', 'Учебники'), hours: t('Оқу сағаттары', 'Учебные часы'), data: t('Дерек', 'Данные'), report: t('Әдіскер есебі', 'Отчёт методиста') };
 
   return (
     <>
@@ -201,6 +203,10 @@ export function App() {
                 <Icon name="sparkle" size={18} />
                 {t('ИИ көмекші', 'ИИ-помощник')}
                 <span className="tag">AI</span>
+              </button>
+              <button aria-current={tab === 'report' ? 'page' : undefined} onClick={() => go('report')}>
+                <Icon name="report" size={18} />
+                {t('Әдіскер есебі', 'Отчёт методиста')}
               </button>
               <button aria-current={tab === 'data' ? 'page' : undefined} onClick={() => go('data')}>
                 <Icon name="data" size={18} />
@@ -243,7 +249,7 @@ export function App() {
             <button className="icon-btn search-toggle" onClick={() => setSearchOpen((v) => !v)} aria-label={t('Іздеу', 'Поиск')} aria-expanded={searchOpen}>
               <Icon name="search" />
             </button>
-            <button className="ai-btn" onClick={() => (aiOpen ? setAiOpen(false) : openAssistant())} aria-expanded={aiOpen}>
+            <button className="ai-btn" onClick={() => (aiOpen ? setAiOpen(false) : openAssistant())} aria-expanded={aiOpen} aria-label={t('ИИ көмекші', 'ИИ-помощник')}>
               <Icon name="sparkle" size={17} />
               <span className="lbl">{t('ИИ көмекші', 'ИИ-помощник')}</span>
             </button>
@@ -349,6 +355,7 @@ export function App() {
               {tab === 'overview' && <Overview c={ctx} />}
               {tab === 'topics' && <Topics c={ctx} />}
               {tab === 'textbooks' && <Textbooks c={ctx} setRefBook={setRefBook} />}
+              {tab === 'report' && <Report c={ctx} />}
               {tab === 'hours' && <Hours key={`${course.key}|${filter.loc}|${filter.lang}|${scope.school}|${scope.unit}`} c={ctx} />}
               {tab === 'data' && (
                 <DataPage

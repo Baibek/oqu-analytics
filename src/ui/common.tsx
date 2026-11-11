@@ -3,7 +3,7 @@ import type { Dataset, Lang, Scope } from '../lib/types';
 import type { HourModel, Status, TextbookResult, TopicStat, Verdict, Evidence } from '../lib/analysis';
 
 export type TFn = (kk: string, ru: string) => string;
-export type Tab = 'overview' | 'topics' | 'textbooks' | 'hours' | 'data';
+export type Tab = 'overview' | 'topics' | 'textbooks' | 'hours' | 'data' | 'report';
 
 /** Барлық экранға ортақ есептелген нәтижелер */
 export interface Ctx {
@@ -78,6 +78,8 @@ const PATHS: Record<string, string> = {
   trendUp: 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
   trendDown: 'M23 18l-9.5-9.5-5 5L1 6M17 18h6v-6',
   key: 'M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
+  report: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5',
+  copy: 'M9 9h11v11H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
   bot: 'M12 8V4H8M4 12a8 8 0 0 1 8-8M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a8 8 0 0 0-8-8M9 13v2M15 13v2',
 };
 

@@ -3,7 +3,7 @@ import type { Dataset, Filter, L10n, Lang, Scope } from '../lib/types';
 import { COURSES, DEFAULT_COURSE, getCourse } from '../lib/generate';
 import { applyFilter, applyScope, compareTextbooks, fitHours, recommendHours, topicStats } from '../lib/analysis';
 import type { ImportedCourse } from '../lib/csv';
-import { Ctx, Icon, Tab, TFn } from './common';
+import { Ctx, Icon, Logo, Tab, TFn } from './common';
 import { Overview } from './Overview';
 import { Topics } from './Topics';
 import { Textbooks } from './Textbooks';
@@ -104,11 +104,11 @@ export function App() {
       <header className="topbar">
         <div className="topbar-in">
           <div className="brand">
-            <span className="logo" aria-hidden="true">
-              <Icon name="overview" size={18} />
-            </span>
+            <Logo />
             <span>
-              <strong>Oqu Analytics</strong>
+              <strong>
+                Oqu<span className="wm-light">Analytics</span>
+              </strong>
               <small>{t('Әдіскерге арналған талдау', 'Аналитика для методиста')}</small>
             </span>
           </div>

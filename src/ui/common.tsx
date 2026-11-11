@@ -70,6 +70,26 @@ export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; s
   );
 }
 
+/** Oqu Analytics белгісі: ашық кітаптан өсіп шығатын нәтиже бағандары */
+export function Logo({ size = 34 }: { size?: number }) {
+  return (
+    <svg className="logo" width={size} height={size} viewBox="0 0 32 32" role="img" aria-label="Oqu Analytics">
+      <defs>
+        <linearGradient id="oqu-logo-g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#0f7c77" />
+          <stop offset="1" stopColor="#0a5551" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#oqu-logo-g)" />
+      <rect x="8.4" y="14.3" width="3.4" height="5.2" rx="1.2" fill="#fff" opacity=".7" />
+      <rect x="14.3" y="10.5" width="3.4" height="9" rx="1.2" fill="#fff" opacity=".85" />
+      <rect x="20.2" y="6" width="3.4" height="13.5" rx="1.2" fill="#f6b84b" />
+      <path d="M5 21.6c3.6-1.7 7.3-1.5 11 .7V26c-3.7-2.2-7.4-2.4-11-.7z" fill="#fff" />
+      <path d="M27 21.6c-3.6-1.7-7.3-1.5-11 .7V26c3.7-2.2 7.4-2.4 11-.7z" fill="#fff" opacity=".85" />
+    </svg>
+  );
+}
+
 export function Pill({ kind, children }: { kind: string; children: ReactNode }) {
   return <span className={`pill pill-${kind}`}>{children}</span>;
 }

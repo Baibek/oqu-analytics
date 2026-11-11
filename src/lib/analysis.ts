@@ -1,4 +1,4 @@
-import type { Dataset, Filter } from './types';
+import type { Dataset, Filter, Scope } from './types';
 import { mean, ols, pearson, quantile, rng, sd, sum } from './stats';
 
 // ---- Ортақ баптаулар (барлығы интерфейсте түсіндіріледі) ----
@@ -11,6 +11,23 @@ export const WATCH = 65;
 /** Қорытынды жасауға қажет ең аз көлем */
 export const MIN_STUDENTS = 30;
 export const MIN_UNITS = 5;
+/** Бір мектеп немесе сынып таңдалғанда тақырыпқа қажет ең аз оқушы саны */
+export const MIN_LOCAL = 10;
+
+/** Мектептің реттік нөмірі: сенім аралығы мен қателер мектеп бойынша кластерленеді */
+export function schoolIndex(ds: Dataset): number[] {
+  const ids = new Map<string, number>();
+  return ds.units.map((u) => {
+    if (!ids.has(u.school)) ids.set(u.school, ids.size);
+    return ids.get(u.school)!;
+  });
+}
+
+export function applyScope(ds: Dataset, sc: Scope): Dataset {
+  if (sc.unit !== null) return { ...ds, students: ds.students.filter((s) => s.unit === sc.unit) };
+  if (sc.school !== null) return { ...ds, students: ds.students.filter((s) => ds.units[s.unit].school === sc.school) };
+  return ds;
+}
 
 export function applyFilter(ds: Dataset, f: Filter): Dataset {
   if (f.loc === 'all' && f.lang === 'all') return ds;
@@ -43,9 +60,15 @@ export interface TopicStat {
 
 const statusOf = (m: number): Status => (m < HARD ? 'hard' : m < WATCH ? 'watch' : 'ok');
 
-export function topicStats(ds: Dataset): TopicStat[] {
+/**
+ * `local` — бір мектеп не сынып: сенім аралығы оқушыларды қайта іріктеумен есептеледі
+ * және қорытынды үшін 10 оқушы жеткілікті. Әйтпесе — облыс: мектептерді қайта іріктеу.
+ */
+export function topicStats(ds: Dataset, opts: { local?: boolean } = {}): TopicStat[] {
   const r = rng(7);
   const nU = ds.units.length;
+  const sch = schoolIndex(ds);
+  const nS = Math.max(0, ...sch) + 1;
   const out: TopicStat[] = ds.topics.map((_, i) => {
     const pass = new Array<number>(nU).fill(0);
     const cnt = new Array<number>(nU).fill(0);
@@ -64,20 +87,38 @@ export function topicStats(ds: Dataset): TopicStat[] {
       return c ? (100 * sum(us.map((u) => pass[u]))) / c : NaN;
     };
     const mastery = share(used);
-    if (n < MIN_STUDENTS || used.length < MIN_UNITS) {
+    const enough = opts.local ? n >= MIN_LOCAL : n >= MIN_STUDENTS && used.length >= MIN_UNITS;
+    if (!enough) {
       return { i, n, units: used.length, mean: mean(scores), mastery, lo: NaN, hi: NaN, status: 'nodata' as Status, borderline: false, spread: 0, urban: null, rural: null, prereq: null };
     }
-    // Сенім аралығы: сынып топтарын қайта іріктеу (кластерлік бутстрэп)
     const boot: number[] = [];
-    for (let b = 0; b < 400; b++) {
-      let p = 0;
-      let c = 0;
-      for (let k = 0; k < used.length; k++) {
-        const u = used[Math.floor(r() * used.length)];
-        p += pass[u];
-        c += cnt[u];
+    if (opts.local) {
+      // Сенім аралығы: оқушыларды қайта іріктеу
+      const passed = scores.map((v) => (v >= PASS ? 1 : 0));
+      for (let b = 0; b < 400; b++) {
+        let p = 0;
+        for (let k = 0; k < n; k++) p += passed[Math.floor(r() * n)];
+        boot.push((100 * p) / n);
       }
-      boot.push((100 * p) / c);
+    } else {
+      // Сенім аралығы: мектептерді қайта іріктеу (кластерлік бутстрэп)
+      const sp = new Array<number>(nS).fill(0);
+      const sc = new Array<number>(nS).fill(0);
+      for (const u of used) {
+        sp[sch[u]] += pass[u];
+        sc[sch[u]] += cnt[u];
+      }
+      const schools = sc.map((c, k) => (c > 0 ? k : -1)).filter((k) => k >= 0);
+      for (let b = 0; b < 400; b++) {
+        let p = 0;
+        let c = 0;
+        for (let k = 0; k < schools.length; k++) {
+          const q = schools[Math.floor(r() * schools.length)];
+          p += sp[q];
+          c += sc[q];
+        }
+        boot.push((100 * p) / c);
+      }
     }
     boot.sort((a, b) => a - b);
     const lo = quantile(boot, 0.025);
@@ -190,7 +231,8 @@ export function compareTextbooks(ds: Dataset, refName?: string, topicIdx?: numbe
     return row;
   });
   const y = used.map((x) => x.y);
-  const fit = others.length ? ols(X, y, used.map((x) => x.s.unit)) : null;
+  const sch = schoolIndex(ds);
+  const fit = others.length ? ols(X, y, used.map((x) => sch[x.s.unit])) : null;
   const outcomeSd = sd(y);
 
   return {

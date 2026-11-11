@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { predictEffect, recommendHours, HourTopic, TopicStat } from '../lib/analysis';
 import { download, toCsv } from '../lib/csv';
 import { sum } from '../lib/stats';
-import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, signed, statusLabel, TFn } from './common';
+import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, ScopeNote, signed, statusLabel, TFn } from './common';
 
 interface Snapshot {
   name: string;
@@ -115,6 +115,8 @@ export function Hours({ c }: { c: Ctx }) {
           'Не меняя годовой объём, каким темам стоит дать больше часов? Система переносит часы с хорошо усвоенных тем на слабые, где дополнительное время действительно помогает. Часы можно менять вручную и сразу видеть прогноз.',
         )}
       />
+
+      <ScopeNote c={c} what="hours" />
 
       <div className="card sticky">
         <div className="metrics">

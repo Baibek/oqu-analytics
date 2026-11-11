@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Dataset, Lang } from '../lib/types';
+import type { Dataset, Lang, Scope } from '../lib/types';
 import type { HourModel, Status, TextbookResult, TopicStat, Verdict, Evidence } from '../lib/analysis';
 
 export type TFn = (kk: string, ru: string) => string;
@@ -7,7 +7,14 @@ export type Tab = 'overview' | 'topics' | 'textbooks' | 'hours' | 'data';
 
 /** Барлық экранға ортақ есептелген нәтижелер */
 export interface Ctx {
+  /** Таңдалған аяның дерегі (облыс, мектеп немесе сынып) */
   ds: Dataset;
+  /** Бүкіл облыс (сүзгімен): оқулық салыстыруы мен сағат моделі осыдан есептеледі */
+  region: Dataset;
+  regionStats: TopicStat[];
+  scope: Scope;
+  /** Мысалы «№5 мектеп · 8Ә»; облыс таңдалса null */
+  scopeLabel: string | null;
   lang: Lang;
   t: TFn;
   stats: TopicStat[];
@@ -125,3 +132,30 @@ export const glossary = (t: TFn) => ({
     'Уверенность: насколько ясно в данных видно, что в классах с большим числом часов результат выше. «Высокая» — нельзя списать на случайность.',
   ),
 });
+
+/** Таңдау аясы облыстан тар болғанда көрсетілетін түсіндірме */
+export function ScopeNote({ c, what }: { c: Ctx; what: 'textbooks' | 'hours' | 'topics' }) {
+  const { t } = c;
+  if (!c.scopeLabel) return null;
+  const book = c.scope.unit !== null ? c.region.units[c.scope.unit]?.textbook : c.region.units.find((u) => u.school === c.scope.school)?.textbook;
+  const text = {
+    topics: t(
+      `Көрсетілген: ${c.scopeLabel}. Әр тақырыптың жанында облыс бойынша көрсеткіш тұр; жолақтағы тік сызық — облыс деңгейі.`,
+      `Показано: ${c.scopeLabel}. Рядом с каждой темой — показатель по области; вертикальная черта на полосе — уровень области.`,
+    ),
+    textbooks: t(
+      `Оқулықтарды бір мектептің дерегімен әділ салыстыру мүмкін емес, сондықтан салыстыру бүкіл облыс бойынша жасалады. ${c.scopeLabel} ${book ?? '—'} оқулығымен оқиды (кестеде белгіленген).`,
+      `Честно сравнить учебники по данным одной школы нельзя, поэтому сравнение сделано по всей области. ${c.scopeLabel} занимается по учебнику ${book ?? '—'} (отмечен в таблице).`,
+    ),
+    hours: t(
+      `Ұсыныс ${c.scopeLabel} үшін: қай тақырып әлсіз екені осы сыныптың нәтижесінен, ал қосымша сағаттың қаншалықты көмектесетіні бүкіл облыс деректерінен алынған.`,
+      `Рекомендация для: ${c.scopeLabel}. Какие темы слабые — по результатам этого класса, а насколько помогает дополнительный час — по данным всей области.`,
+    ),
+  }[what];
+  return (
+    <div className="note note-scope">
+      <Icon name="info" />
+      <div>{text}</div>
+    </div>
+  );
+}

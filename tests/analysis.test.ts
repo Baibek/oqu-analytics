@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { gauss, ols, rng, tCdf, tQuantile } from '../src/lib/stats';
-import { generateDemo, TRUTH } from '../src/lib/generate';
-import { applyFilter, compareTextbooks, fitHours, predictEffect, recommendHours, textbooksBySection, topicStats } from '../src/lib/analysis';
-import { exportCurriculum, exportResults, importData, parseCsv } from '../src/lib/csv';
+import { COURSES, generateCourse, generateDemo, TRUTH } from '../src/lib/generate';
+import { applyFilter, applyScope, compareTextbooks, fitHours, predictEffect, recommendHours, textbooksBySection, topicStats } from '../src/lib/analysis';
+import { exportCurriculum, exportResults, importCatalog, importData, parseCsv, toCsv } from '../src/lib/csv';
 import { sum } from '../src/lib/stats';
 
 describe('статистика', () => {
@@ -150,5 +150,48 @@ describe('CSV', () => {
     const bad = importData('student_id,school,textbook,topic,score\n1,A,T,Тақырып,150\n2,A,T,Тақырып,70');
     expect(bad.issues.some((i) => i.code === 'bad_score')).toBe(true);
     expect(bad.ds!.hasBaseline).toBe(false);
+  });
+});
+
+describe('пәндер, параллельдер, сыныптар', () => {
+  it('әр курс дерегі жасалады және талдауға жарамды', () => {
+    for (const spec of COURSES) {
+      const ds = generateCourse(spec);
+      expect(ds.subject.kk).toBe(spec.subject.kk);
+      expect(ds.units.every((u) => u.name.startsWith(String(spec.grade)))).toBe(true);
+      const st = topicStats(ds);
+      expect(st.filter((x) => x.status !== 'nodata').length).toBe(spec.topics.length);
+      const m = fitHours(ds);
+      expect(sum(recommendHours(m, st))).toBe(m.total);
+    }
+  });
+
+  it('бір сынып таңдалғанда тақырыптар сол сыныптың дерегімен есептеледі', () => {
+    const ds = generateDemo();
+    const u = ds.units.findIndex((x) => x.urban);
+    const cls = applyScope(ds, { school: null, unit: u });
+    expect(cls.students.every((s) => s.unit === u)).toBe(true);
+    const local = topicStats(cls, { local: true });
+    expect(local.every((x) => x.status !== 'nodata')).toBe(true);
+    expect(local.every((x) => x.lo <= x.mastery && x.mastery <= x.hi)).toBe(true);
+    // Облыстық режимде бір сынып қорытындыға жеткіліксіз
+    expect(topicStats(cls).every((x) => x.status === 'nodata')).toBe(true);
+    const school = applyScope(ds, { school: ds.units[u].school, unit: null });
+    expect(new Set(school.students.map((s) => s.unit)).size).toBeGreaterThan(1);
+  });
+
+  it('бірнеше пән мен параллель бар файл курстарға бөлінеді', () => {
+    const a = generateCourse(COURSES.find((c) => c.key === 'alg-7')!);
+    const b = generateCourse(COURSES.find((c) => c.key === 'chem-9')!);
+    const ra = parseCsv(exportResults(a, 'kk', 6));
+    const rb = parseCsv(exportResults(b, 'kk', 6));
+    const pa = parseCsv(exportCurriculum(a, 'kk'));
+    const pb = parseCsv(exportCurriculum(b, 'kk'));
+    const { courses, issues } = importCatalog(toCsv([...ra, ...rb.slice(1)]), toCsv([...pa, ...pb.slice(1)]));
+    expect(issues).toEqual([]);
+    expect(courses.map((c) => `${c.ds.subject.kk} ${c.ds.grade}`).sort()).toEqual(['Алгебра 7', 'Химия 9']);
+    const alg = courses.find((c) => c.ds.grade === 7)!.ds;
+    expect(alg.topics.length).toBe(a.topics.length);
+    expect(alg.units.map((u) => u.name)).toEqual(a.units.slice(0, 6).map((u) => u.name));
   });
 });

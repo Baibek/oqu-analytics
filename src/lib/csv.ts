@@ -38,8 +38,8 @@ export function parseCsv(text: string): string[][] {
 export const toCsv = (rows: (string | number)[][]) =>
   '﻿' + rows.map((r) => r.map((v) => (/[",;\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))).join(',')).join('\n');
 
-export const RESULT_COLS = ['student_id', 'school', 'district', 'locality', 'language', 'textbook', 'baseline', 'topic', 'score', 'hours'] as const;
-export const CURRICULUM_COLS = ['topic', 'section', 'planned_hours', 'prerequisites'] as const;
+export const RESULT_COLS = ['subject', 'grade', 'class', 'student_id', 'school', 'district', 'locality', 'language', 'textbook', 'baseline', 'topic', 'score', 'hours'] as const;
+export const CURRICULUM_COLS = ['subject', 'grade', 'topic', 'section', 'planned_hours', 'prerequisites'] as const;
 const REQUIRED = ['student_id', 'school', 'textbook', 'topic', 'score'];
 
 export interface ImportIssue {
@@ -115,10 +115,11 @@ export function importData(resultsCsv: string, curriculumCsv?: string, label = '
     const school = get(r, 'school') ?? '';
     const textbook = get(r, 'textbook') ?? '';
     const lang: Lang = /^(ru|рус|орыс)/i.test(get(r, 'language') ?? '') ? 'ru' : 'kk';
-    const ukey = `${school}|${textbook}|${lang}`;
+    const cls = get(r, 'class') ?? '';
+    const ukey = `${school}|${cls}|${textbook}|${lang}`;
     if (!unitIdx.has(ukey)) {
       unitIdx.set(ukey, units.length);
-      units.push({ id: ukey, school, district: get(r, 'district') ?? '', urban: /^(urban|city|қала|город|1|true)/i.test(get(r, 'locality') ?? ''), lang, textbook, hours: [] });
+      units.push({ id: ukey, school, name: cls, district: get(r, 'district') ?? '', urban: /^(urban|city|қала|город|1|true)/i.test(get(r, 'locality') ?? ''), lang, textbook, hours: [] });
       unitHours.push(new Map());
     }
     const ui = unitIdx.get(ukey)!;
@@ -152,7 +153,48 @@ export function importData(resultsCsv: string, curriculumCsv?: string, label = '
   units.forEach((u, ui) => (u.hours = names.map((_, i) => unitHours[ui].get(i) ?? NaN)));
   const out: Student[] = students.map((s) => ({ id: s.id, unit: s.unit, baseline: s.baseline, scores: names.map((_, i) => s.scores.get(i) ?? NaN) }));
   const withBase = out.filter((s) => !Number.isNaN(s.baseline)).length;
-  return { ds: { label, synthetic: false, hasBaseline: withBase >= out.length * 0.8, topics, units, students: out }, issues };
+  const first = rows[1] ?? [];
+  const subj = get(first, 'subject') || label;
+  const grade = Number(get(first, 'grade')) || 0;
+  return { ds: { label, subject: { kk: subj, ru: subj }, grade, synthetic: false, hasBaseline: withBase >= out.length * 0.8, topics, units, students: out }, issues };
+}
+
+export interface ImportedCourse {
+  key: string;
+  ds: Dataset;
+}
+
+/**
+ * Бір файлда бірнеше пән мен параллель болуы мүмкін: жолдарды (subject, grade) бойынша
+ * бөліп, әр топты жеке курс ретінде импорттаймыз. Оқу жоспары да солай бөлінеді.
+ */
+export function importCatalog(resultsCsv: string, curriculumCsv?: string, label = 'CSV'): { courses: ImportedCourse[]; issues: ImportIssue[] } {
+  const rows = parseCsv(resultsCsv);
+  const head = (rows[0] ?? []).map((h) => h.toLowerCase());
+  const si = head.indexOf('subject');
+  const gi = head.indexOf('grade');
+  if (si < 0 && gi < 0) {
+    const r = importData(resultsCsv, curriculumCsv, label);
+    return { courses: r.ds ? [{ key: 'csv', ds: r.ds }] : [], issues: r.issues };
+  }
+  const plan = curriculumCsv ? parseCsv(curriculumCsv) : null;
+  const ph = (plan?.[0] ?? []).map((h) => h.toLowerCase());
+  const keyOf = (r: string[], sIdx: number, gIdx: number) => `${sIdx >= 0 ? (r[sIdx] ?? '') : ''}|${gIdx >= 0 ? (r[gIdx] ?? '') : ''}`;
+  const groups = new Map<string, string[][]>();
+  for (const r of rows.slice(1)) {
+    const k = keyOf(r, si, gi);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(r);
+  }
+  const courses: ImportedCourse[] = [];
+  const issues: ImportIssue[] = [];
+  for (const [k, rs] of groups) {
+    const planRows = plan && (ph.includes('subject') || ph.includes('grade')) ? [plan[0], ...plan.slice(1).filter((r) => keyOf(r, ph.indexOf('subject'), ph.indexOf('grade')) === k)] : plan;
+    const r = importData(toCsv([rows[0], ...rs]), planRows ? toCsv(planRows) : undefined, label);
+    issues.push(...r.issues.map((i) => ({ ...i, detail: `${k.replace('|', ', ')}: ${i.detail}` })));
+    if (r.ds) courses.push({ key: `csv:${k}`, ds: r.ds });
+  }
+  return { courses, issues };
 }
 
 /** Деректі импорт форматындағы CSV-ге айналдыру (үлгі ретінде де қолданылады) */
@@ -163,7 +205,7 @@ export function exportResults(ds: Dataset, lang: Lang, limitUnits?: number): str
     const u = ds.units[s.unit];
     ds.topics.forEach((t, i) => {
       if (Number.isNaN(s.scores[i])) return;
-      rows.push([s.id, u.school, u.district, u.urban ? 'urban' : 'rural', u.lang, u.textbook, Number.isNaN(s.baseline) ? '' : s.baseline, t.name[lang], s.scores[i], Number.isNaN(u.hours[i]) ? '' : u.hours[i]]);
+      rows.push([ds.subject[lang], ds.grade || '', u.name, s.id, u.school, u.district, u.urban ? 'urban' : 'rural', u.lang, u.textbook, Number.isNaN(s.baseline) ? '' : s.baseline, t.name[lang], s.scores[i], Number.isNaN(u.hours[i]) ? '' : u.hours[i]]);
     });
   }
   return toCsv(rows);
@@ -171,7 +213,7 @@ export function exportResults(ds: Dataset, lang: Lang, limitUnits?: number): str
 
 export function exportCurriculum(ds: Dataset, lang: Lang): string {
   const byId = new Map(ds.topics.map((t) => [t.id, t.name[lang]]));
-  return toCsv([[...CURRICULUM_COLS], ...ds.topics.map((t) => [t.name[lang], t.section[lang], t.planned, t.prereq.map((p) => byId.get(p) ?? p).join(';')])]);
+  return toCsv([[...CURRICULUM_COLS], ...ds.topics.map((t) => [ds.subject[lang], ds.grade || '', t.name[lang], t.section[lang], t.planned, t.prereq.map((p) => byId.get(p) ?? p).join(';')])]);
 }
 
 export function download(name: string, content: string, type = 'text/csv;charset=utf-8') {

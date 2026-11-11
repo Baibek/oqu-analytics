@@ -9,6 +9,10 @@ export function Overview({ c }: { c: Ctx }) {
   const hard = usable.filter((s) => s.status === 'hard').sort((a, b) => a.mastery - b.mastery);
   const watch = usable.filter((s) => s.status === 'watch');
   const schools = new Set(ds.students.map((s) => ds.units[s.unit].school)).size;
+  const classes = new Set(ds.students.map((s) => s.unit)).size;
+  const local = c.scopeLabel !== null;
+  const regAvg = mean(c.regionStats.filter((s) => s.status !== 'nodata').map((s) => s.mastery));
+  const myBook = c.scope.unit !== null ? ds.units[c.scope.unit].textbook : null;
 
   const head = (
     <PageHead
@@ -45,14 +49,25 @@ export function Overview({ c }: { c: Ctx }) {
   return (
     <>
       {head}
+      {local && (
+        <div className="note note-scope">
+          <Icon name="info" />
+          <div>
+            {t(
+              `Көрсетілген: ${c.scopeLabel}. Тақырыптар мен сағат ұсынысы осы ${c.scope.unit !== null ? 'сыныптың' : 'мектептің'} нәтижесімен, оқулық салыстыруы бүкіл облыс бойынша.`,
+              `Показано: ${c.scopeLabel}. Темы и рекомендация по часам — по результатам ${c.scope.unit !== null ? 'этого класса' : 'этой школы'}, сравнение учебников — по всей области.`,
+            )}
+          </div>
+        </div>
+      )}
       <section className="kpis" aria-label={t('Негізгі көрсеткіштер', 'Ключевые показатели')}>
         <div className="card kpi">
           <div className="v">{ds.students.length.toLocaleString('ru-RU')}</div>
           <div className="l">{t('оқушы', 'учеников')}</div>
         </div>
         <div className="card kpi">
-          <div className="v">{schools}</div>
-          <div className="l">{t('мектеп', 'школ')}</div>
+          <div className="v">{myBook ?? (local ? classes : schools)}</div>
+          <div className="l">{myBook ? t('сыныптың оқулығы', 'учебник класса') : local ? t('сынып', 'классов') : t('мектеп', 'школ')}</div>
         </div>
         <div className="card kpi">
           <div className="v">{ds.topics.length}</div>
@@ -63,6 +78,11 @@ export function Overview({ c }: { c: Ctx }) {
           <div className="l">
             {t('орташа меңгеру үлесі', 'средняя доля усвоивших')}
             <Hint text={g.mastery} />
+            {local && (
+              <span style={{ display: 'block' }}>
+                {t('облыс', 'область')} {fmt(regAvg)}% ({signed(mean(usable.map((s) => s.mastery)) - regAvg, 0)} п.п.)
+              </span>
+            )}
           </div>
         </div>
       </section>
@@ -85,6 +105,7 @@ export function Overview({ c }: { c: Ctx }) {
             )}
             <small>
               {t(`тағы ${watch.length} тақырып назарда`, `ещё ${watch.length} в зоне риска`)} · {t('меңгеру үлесі < 50%', 'доля усвоивших < 50%')}
+              {local && ` · ${t('сынып / облыс', 'класс / область')}`}
             </small>
           </p>
           {hard.length > 0 && (
@@ -92,7 +113,9 @@ export function Overview({ c }: { c: Ctx }) {
               {hard.slice(0, 4).map((s) => (
                 <li key={s.i}>
                   <span>{ds.topics[s.i].name[lang]}</span>
-                  <b className="c-hard">{fmt(s.mastery)}%</b>
+                  <b className="c-hard">
+                    {fmt(s.mastery)}%{local && c.regionStats[s.i].status !== 'nodata' && <small className="muted"> / {fmt(c.regionStats[s.i].mastery)}%</small>}
+                  </b>
                 </li>
               ))}
             </ul>
@@ -123,6 +146,7 @@ export function Overview({ c }: { c: Ctx }) {
                 )}
                 <small>
                   {t(`${tb.ref}-мен салыстырғанда, мектеп құрамына түзетілген`, `относительно ${tb.ref}, с поправкой на состав школ`)}
+                  {local && ` · ${t('бүкіл облыс бойынша', 'по всей области')}`}
                   <Hint text={g.adjusted} />
                 </small>
               </p>

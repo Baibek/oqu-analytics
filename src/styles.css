@@ -99,6 +99,19 @@ small { font-size: 0.82em; }
 .field { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); font-size: 0.88rem; }
 select { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 9px; padding: 6px 30px 6px 10px; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 14px center, right 9px center; background-size: 5px 5px; background-repeat: no-repeat; cursor: pointer; }
 
+/* Пән → параллель → мектеп → сынып */
+.scopebar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 14px; padding: 14px 16px; margin-top: 18px; }
+.scopebar .pick { display: flex; flex-direction: column; gap: 4px; font-size: 0.76rem; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.scopebar .pick select { font-size: 0.95rem; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; min-width: 150px; padding-top: 8px; padding-bottom: 8px; }
+.scopebar .pick select:disabled { opacity: 0.55; cursor: not-allowed; }
+.scope-sep { color: var(--border-strong); padding-bottom: 10px; }
+.scopebar .btn { margin-bottom: 4px; }
+.note-scope { background: var(--brand-soft); border-color: color-mix(in srgb, var(--brand) 30%, transparent); }
+.track .reg { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--text); }
+.scale .k-reg { width: 3px; height: 14px; background: var(--text); border-radius: 2px; }
+.tval .reg-v { display: block; font-size: 0.78rem; color: var(--muted); }
+tr.mine td { background: var(--brand-soft); }
+tr.mine td:first-child { box-shadow: inset 4px 0 var(--brand); }
 main { min-height: 60vh; animation: fade 0.18s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px 24px; flex-wrap: wrap; margin: 20px 0 20px; }
@@ -316,6 +329,9 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border
   .tmain .tstatus { display: none; }
 }
 @media (max-width: 640px) {
+  .scopebar .pick { flex: 1 1 140px; }
+  .scopebar .pick select { min-width: 0; width: 100%; }
+  .scope-sep { display: none; }
   h1 { font-size: 1.45rem; }
   .brand small { display: none; }
   .nav button { padding: 8px 10px; }

@@ -1,12 +1,13 @@
 import { Fragment, useState } from 'react';
 import type { Status, TopicStat } from '../lib/analysis';
-import { HARD, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
-import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, signed, statusLabel } from './common';
+import { HARD, MIN_LOCAL, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
+import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, ScopeNote, signed, statusLabel } from './common';
 
 type View = 'difficulty' | 'section';
 
 export function Topics({ c }: { c: Ctx }) {
   const { t, ds, stats, lang, model } = c;
+  const local = c.scopeLabel !== null;
   const g = glossary(t);
   const [view, setView] = useState<View>('difficulty');
   const [only, setOnly] = useState<Status | 'all'>('all');
@@ -22,6 +23,8 @@ export function Topics({ c }: { c: Ctx }) {
     const h = model.topics[s.i];
     const isOpen = open === s.i;
     const pre = s.prereq;
+    const reg = local ? c.regionStats[s.i] : null;
+    const regOk = reg && reg.status !== 'nodata';
     return (
       <div key={s.i} className={`trow ${isOpen ? 'open' : ''}`}>
         <button className="tmain" onClick={() => setOpen(isOpen ? null : s.i)} aria-expanded={isOpen}>
@@ -38,6 +41,7 @@ export function Topics({ c }: { c: Ctx }) {
             )}
             <i className="tick" style={{ left: `${HARD}%` }} />
             <i className="tick" style={{ left: `${WATCH}%` }} />
+            {regOk && <i className="reg" style={{ left: `${reg.mastery}%` }} />}
           </span>
           <span className="tval">
             {s.status === 'nodata' ? (
@@ -48,6 +52,11 @@ export function Topics({ c }: { c: Ctx }) {
                 <small>
                   {fmt(s.lo)}–{fmt(s.hi)}
                 </small>
+                {regOk && (
+                  <span className="reg-v">
+                    {t('облыс', 'область')} {fmt(reg.mastery)}% ({signed(s.mastery - reg.mastery, 0)})
+                  </span>
+                )}
               </>
             )}
           </span>
@@ -66,8 +75,12 @@ export function Topics({ c }: { c: Ctx }) {
             {s.status === 'nodata' ? (
               <p className="small">
                 {t(
-                  `Қорытынды жасалмайды: ${s.n} оқушы, ${s.units} сынып тобы. Кемінде ${MIN_STUDENTS} оқушы мен ${MIN_UNITS} топ керек.`,
-                  `Вывод не делается: ${s.n} учеников, ${s.units} классов. Нужно не менее ${MIN_STUDENTS} учеников и ${MIN_UNITS} классов.`,
+                  local
+                    ? `Қорытынды жасалмайды: ${s.n} оқушы. Кемінде ${MIN_LOCAL} оқушы керек.`
+                    : `Қорытынды жасалмайды: ${s.n} оқушы, ${s.units} сынып. Кемінде ${MIN_STUDENTS} оқушы мен ${MIN_UNITS} сынып керек.`,
+                  local
+                    ? `Вывод не делается: ${s.n} учеников. Нужно не менее ${MIN_LOCAL} учеников.`
+                    : `Вывод не делается: ${s.n} учеников, ${s.units} классов. Нужно не менее ${MIN_STUDENTS} учеников и ${MIN_UNITS} классов.`,
                 )}
               </p>
             ) : (
@@ -86,7 +99,7 @@ export function Topics({ c }: { c: Ctx }) {
                 )}
                 <dl className="facts" style={{ marginTop: pre?.root ? 12 : 8 }}>
                   <div>
-                    <dt>{t('Оқушы / сынып тобы', 'Учеников / классов')}</dt>
+                    <dt>{t('Оқушы / сынып', 'Учеников / классов')}</dt>
                     <dd>
                       {s.n} / {s.units}
                     </dd>
@@ -95,14 +108,25 @@ export function Topics({ c }: { c: Ctx }) {
                     <dt>{t('Орташа балл', 'Средний балл')}</dt>
                     <dd>{fmt(s.mean, 1)}</dd>
                   </div>
-                  <div>
-                    <dt>{t('Қала / ауыл', 'Город / село')}</dt>
-                    <dd>{s.urban !== null && s.rural !== null ? `${fmt(s.urban)}% / ${fmt(s.rural)}%` : '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('Сыныптар арасындағы шашырау', 'Разброс между классами')}</dt>
-                    <dd>± {fmt(s.spread)} п.п.</dd>
-                  </div>
+                  {local ? (
+                    <div>
+                      <dt>{t('Облыс бойынша', 'По области')}</dt>
+                      <dd>
+                        {regOk ? `${fmt(reg.mastery)}%` : '—'} <small className="muted">{regOk ? `(${t('айырма', 'разница')} ${signed(s.mastery - reg.mastery, 0)} п.п.)` : ''}</small>
+                      </dd>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <dt>{t('Қала / ауыл', 'Город / село')}</dt>
+                        <dd>{s.urban !== null && s.rural !== null ? `${fmt(s.urban)}% / ${fmt(s.rural)}%` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('Сыныптар арасындағы шашырау', 'Разброс между классами')}</dt>
+                        <dd>± {fmt(s.spread)} п.п.</dd>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <dt>{t('Жоспарлы сағат', 'Часов по плану')}</dt>
                     <dd>{tp.planned}</dd>
@@ -166,6 +190,8 @@ export function Topics({ c }: { c: Ctx }) {
         </div>
       </PageHead>
 
+      <ScopeNote c={c} what="topics" />
+
       <div className="toolbar">
         <div className="chips" role="group" aria-label={t('Мәртебе бойынша сүзгі', 'Фильтр по статусу')}>
           {chips.map(([id, label, dot]) => (
@@ -212,6 +238,11 @@ export function Topics({ c }: { c: Ctx }) {
         <span>
           <i className="k-ci" /> {t('95% сенім аралығы', '95% доверительный интервал')}
         </span>
+        {local && (
+          <span>
+            <i className="k-reg" /> {t('облыс деңгейі', 'уровень области')}
+          </span>
+        )}
       </div>
       {ds.synthetic && (
         <Note>

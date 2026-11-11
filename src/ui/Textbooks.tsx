@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { MIN_STUDENTS, MIN_UNITS, textbooksBySection } from '../lib/analysis';
-import { Ctx, fmt, glossary, Hint, Icon, Note, PageHead, Pill, signed, verdictLabel } from './common';
+import { Ctx, fmt, glossary, Hint, Icon, Note, PageHead, Pill, ScopeNote, signed, verdictLabel } from './common';
 
 const pillOf = { ref: 'nodata', better: 'ok', worse: 'hard', unproven: 'watch', nodata: 'nodata' } as const;
 
 export function Textbooks({ c, setRefBook }: { c: Ctx; setRefBook: (s: string) => void }) {
-  const { t, ds, lang } = c;
+  const { t, lang } = c;
+  const ds = c.region;
+  const mine = c.scope.unit !== null ? c.region.units[c.scope.unit]?.textbook : c.scope.school ? c.region.units.find((u) => u.school === c.scope.school)?.textbook : undefined;
   const g = glossary(t);
   const tb = c.textbooks;
   const refBook = tb?.ref ?? '';
@@ -68,6 +70,8 @@ export function Textbooks({ c, setRefBook }: { c: Ctx; setRefBook: (s: string) =
           </select>
         </label>,
       )}
+
+      <ScopeNote c={c} what="textbooks" />
 
       <div className="card verdict">
         <span className="badge">
@@ -149,9 +153,10 @@ export function Textbooks({ c, setRefBook }: { c: Ctx; setRefBook: (s: string) =
           </thead>
           <tbody>
             {tb.rows.map((r) => (
-              <tr key={r.name}>
+              <tr key={r.name} className={r.name === mine ? 'mine' : ''}>
                 <td>
                   <b>{r.name}</b>
+                  {r.name === mine && <small className="muted" style={{ display: 'block' }}>{t('таңдалған сынып', 'выбранный класс')}</small>}
                 </td>
                 <td className="num">{r.n}</td>
                 <td className="num">{r.units}</td>

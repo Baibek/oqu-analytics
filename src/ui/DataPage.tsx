@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import type { Dataset } from '../lib/types';
-import { CURRICULUM_COLS, download, exportCurriculum, exportResults, ImportIssue, importData, RESULT_COLS } from '../lib/csv';
+import { CURRICULUM_COLS, download, exportCurriculum, exportResults, ImportedCourse, ImportIssue, importCatalog, RESULT_COLS } from '../lib/csv';
 import { HARD, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
 import { generateDemo } from '../lib/generate';
 import { Ctx, Icon, Note, PageHead, TFn } from './common';
@@ -33,7 +32,7 @@ function Drop({ label, hint, file, onFile, t }: { label: string; hint: string; f
   );
 }
 
-export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Dataset; onLoad: (ds: Dataset) => void; onReset: () => void }) {
+export function DataPage({ c, synthetic, onLoad, onReset }: { c: Ctx; synthetic: boolean; onLoad: (courses: ImportedCourse[]) => void; onReset: () => void }) {
   const { t, lang } = c;
   const [results, setResults] = useState<File | null>(null);
   const [plan, setPlan] = useState<File | null>(null);
@@ -51,16 +50,21 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
 
   const run = async () => {
     if (!results) return;
-    const r = importData(await results.text(), plan ? await plan.text() : undefined, results.name);
+    const r = importCatalog(await results.text(), plan ? await plan.text() : undefined, results.name);
     setIssues(r.issues);
-    if (r.ds) {
-      onLoad(r.ds);
-      setLoaded(`${r.ds.students.length} ${t('оқушы', 'учеников')}, ${r.ds.topics.length} ${t('тақырып', 'тем')}, ${new Set(r.ds.units.map((u) => u.school)).size} ${t('мектеп', 'школ')}`);
+    if (r.courses.length) {
+      onLoad(r.courses);
+      const students = r.courses.reduce((a, x) => a + x.ds.students.length, 0);
+      const schools = new Set(r.courses.flatMap((x) => x.ds.units.map((u) => u.school))).size;
+      setLoaded(`${r.courses.length} ${t('курс (пән × параллель)', 'курс(ов) (предмет × параллель)')}, ${students} ${t('оқушы нәтижесі', 'результатов учеников')}, ${schools} ${t('мектеп', 'школ')}`);
     } else setLoaded('');
   };
 
   const sample = generateDemo();
   const desc: Record<string, [string, string, boolean]> = {
+    subject: ['Пән (мысалы, Алгебра). Бір файлда бірнеше пән болуы мүмкін', 'Предмет (например, Алгебра). В одном файле может быть несколько предметов', false],
+    grade: ['Параллель: 7, 8, 9…', 'Параллель: 7, 8, 9…', false],
+    class: ['Сынып атауы: 8А, 8Ә…', 'Название класса: 8А, 8Ә…', false],
     student_id: ['Оқушы коды (аты-жөні емес)', 'Код ученика (не ФИО)', true],
     school: ['Мектеп', 'Школа', true],
     district: ['Аудан', 'Район', false],
@@ -129,7 +133,7 @@ export function DataPage({ c, source, onLoad, onReset }: { c: Ctx; source: Datas
               <Icon name="sparkle" size={16} />
               {t('Жүктеу және талдау', 'Загрузить и проанализировать')}
             </button>
-            {!source.synthetic && (
+            {!synthetic && (
               <button className="btn" onClick={onReset}>
                 <Icon name="reset" size={16} />
                 {t('Демо дерекке қайту', 'Вернуться к демо')}

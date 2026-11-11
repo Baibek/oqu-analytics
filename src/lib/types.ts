@@ -11,10 +11,12 @@ export interface Topic {
   prereq: string[];
 }
 
-/** Сынып тобы: бір мектеп, бір оқулық, бір оқыту тілі */
+/** Бір сынып (мысалы, №5 мектеп, 8Ә): бір оқулық, бір оқыту тілі */
 export interface Unit {
   id: string;
   school: string;
+  /** Сынып атауы, мысалы «8Ә» (белгісіз болса бос) */
+  name: string;
   district: string;
   urban: boolean;
   lang: Lang;
@@ -34,6 +36,10 @@ export interface Student {
 
 export interface Dataset {
   label: string;
+  /** Пән */
+  subject: L10n;
+  /** Параллель (сынып деңгейі), белгісіз болса 0 */
+  grade: number;
   synthetic: boolean;
   hasBaseline: boolean;
   topics: Topic[];
@@ -44,4 +50,11 @@ export interface Dataset {
 export interface Filter {
   loc: 'all' | 'urban' | 'rural';
   lang: 'all' | Lang;
+}
+
+/** Таңдау аясы: бүкіл облыс, бір мектеп немесе бір сынып */
+export interface Scope {
+  school: string | null;
+  /** Unit индексі */
+  unit: number | null;
 }

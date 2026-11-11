@@ -21,6 +21,8 @@ export interface Unit {
   urban: boolean;
   lang: Lang;
   textbook: string;
+  /** Оқу бағдарламасы (мысалы, қолданыстағы не пилоттық жаңартылған), белгісіз болса бос жол */
+  program: string;
   /** Әр тақырыпқа нақты өткізілген сағат (topics ретімен), белгісіз болса NaN */
   hours: number[];
 }

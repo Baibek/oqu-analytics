@@ -1,4 +1,5 @@
 import { MIN_STUDENTS, MIN_UNITS, predictEffect } from '../lib/analysis';
+import type { Control } from '../lib/analysis';
 import type { TextbookRow } from '../lib/analysis';
 import { mean, sum } from '../lib/stats';
 import { Ctx, fmt, Icon, Note, Pill, signed, statusLabel, verdictLabel } from './common';
@@ -77,7 +78,7 @@ export function Report({ c }: { c: Ctx }) {
   const unproven = by('unproven');
   const tbNoData = by('nodata');
   const flipped = tb?.rows.find((r) => r.flipped);
-  const ctrl = { baseline: t('бастапқы диагностика балы', 'балл входной диагностики'), urban: t('қала/ауыл', 'город/село'), lang: t('оқыту тілі', 'язык обучения') };
+  const ctrl: Record<Control, string> = { baseline: t('бастапқы диагностика балы', 'балл входной диагностики'), urban: t('қала/ауыл', 'город/село'), lang: t('оқыту тілі', 'язык обучения'), textbook: t('оқулық', 'учебник') };
   const names = (rs: TextbookRow[]) => rs.map((r) => r.name).join(', ');
   const parts: string[] = [];
   if (better.length) parts.push(t(`${names(better)} — мәнді жоғары`, `${names(better)} — значимо выше`));

@@ -46,9 +46,76 @@ export function Overview({ c }: { c: Ctx }) {
   const ups = moves.filter((m) => m.d > 0).sort((a, b) => eff.per[b.i].delta - eff.per[a.i].delta);
   const moved = sum(ups.map((m) => m.d));
 
+  const worst = hard[0] ?? [...watch].sort((x, y) => x.mastery - y.mastery)[0] ?? null;
+  const worstName = worst ? ds.topics[worst.i].name[lang] : '';
+  const root = worst?.prereq?.root ? worst.prereq : null;
+  const avg = mean(usable.map((s) => s.mastery));
+
   return (
     <>
-      {head}
+      <section className="hero" aria-labelledby="hero-title">
+        <span className="hero-bars" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <div className="hero-main">
+          <h1 className="hero-eyebrow">
+            {t('Шолу · Басты қорытынды', 'Обзор · Главный вывод')}
+          </h1>
+          <p className="hero-title" id="hero-title">
+            {worst
+              ? hard.length
+                ? t(`Ең әлсіз тақырып — «${worstName}»: оны оқушылардың ${fmt(worst.mastery)}%-ы ғана меңгерген`, `Самая слабая тема — «${worstName}»: её усвоили только ${fmt(worst.mastery)}% учеников`)
+                : t(`Қиын тақырып жоқ. Ең төмені — «${worstName}», ${fmt(worst.mastery)}%`, `Сложных тем нет. Ниже всех — «${worstName}», ${fmt(worst.mastery)}%`)
+              : t('Барлық тақырып жақсы меңгерілген', 'Все темы усвоены хорошо')}
+          </p>
+          <p className="hero-sub">
+            {root
+              ? t(
+                  `Ықтимал себебі тірек тақырыпта: «${ds.topics[root.i].name[lang]}» (${fmt(root.mastery)}%). Сағатты алдымен соған беру тиімді.`,
+                  `Вероятная причина в опорной теме: «${ds.topics[root.i].name[lang]}» (${fmt(root.mastery)}%). Часы выгоднее сначала дать ей.`,
+                )
+              : hard.length
+                ? t(`Барлығы ${hard.length} тақырып қиын, ${watch.length} тақырып назарда.`, `Всего сложных тем: ${hard.length}, в зоне риска: ${watch.length}.`)
+                : watch.length
+                  ? t(`Меңгеру үлесі 50%-дан төмен тақырып жоқ; ${watch.length} тақырып назарда (50–65%).`, `Тем ниже 50% нет; в зоне риска (50–65%): ${watch.length}.`)
+                  : t('Барлық тақырыптың меңгеру үлесі 65%-дан жоғары.', 'У всех тем доля усвоивших выше 65%.')}
+          </p>
+          <div className="hero-actions">
+            <button className="btn accent" onClick={() => c.go('topics')}>
+              {t('Тақырыптарды ашу', 'Открыть темы')} <Icon name="arrow" size={16} />
+            </button>
+            <button className="btn on-dark" onClick={() => c.go('hours')}>
+              <Icon name="clock" size={16} />
+              {t('Сағат жоспары', 'План часов')}
+            </button>
+          </div>
+        </div>
+        <dl className="hero-stats">
+          <div>
+            <dt>{t('оқушы', 'учеников')}</dt>
+            <dd>{ds.students.length.toLocaleString('ru-RU')}</dd>
+          </div>
+          <div>
+            <dt>{myBook ? t('сыныптың оқулығы', 'учебник класса') : local ? t('сынып', 'классов') : t('мектеп', 'школ')}</dt>
+            <dd>{myBook ?? (local ? classes : schools)}</dd>
+          </div>
+          <div>
+            <dt>{t('тақырып', 'тем')}</dt>
+            <dd>{ds.topics.length}</dd>
+          </div>
+          <div>
+            <dt>
+              {t('орташа меңгеру', 'среднее усвоение')}
+              <Hint text={g.mastery} />
+            </dt>
+            <dd>
+              {fmt(avg)}%{local && <small>{t('облыс', 'область')} {fmt(regAvg)}%</small>}
+            </dd>
+          </div>
+        </dl>
+      </section>
       {local && (
         <div className="note note-scope">
           <Icon name="info" />
@@ -60,35 +127,8 @@ export function Overview({ c }: { c: Ctx }) {
           </div>
         </div>
       )}
-      <section className="kpis" aria-label={t('Негізгі көрсеткіштер', 'Ключевые показатели')}>
-        <div className="card kpi">
-          <div className="v">{ds.students.length.toLocaleString('ru-RU')}</div>
-          <div className="l">{t('оқушы', 'учеников')}</div>
-        </div>
-        <div className="card kpi">
-          <div className="v">{myBook ?? (local ? classes : schools)}</div>
-          <div className="l">{myBook ? t('сыныптың оқулығы', 'учебник класса') : local ? t('сынып', 'классов') : t('мектеп', 'школ')}</div>
-        </div>
-        <div className="card kpi">
-          <div className="v">{ds.topics.length}</div>
-          <div className="l">{t('тақырып', 'тем')}</div>
-        </div>
-        <div className="card kpi">
-          <div className="v">{fmt(mean(usable.map((s) => s.mastery)))}%</div>
-          <div className="l">
-            {t('орташа меңгеру үлесі', 'средняя доля усвоивших')}
-            <Hint text={g.mastery} />
-            {local && (
-              <span className="block">
-                {t('облыс', 'область')} {fmt(regAvg)}% ({signed(mean(usable.map((s) => s.mastery)) - regAvg, 0)} п.п.)
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
-
       <section className="answers">
-        <article className="card answer">
+        <article className={`card answer edge-${hard.length ? 'hard' : watch.length ? 'watch' : 'ok'}`}>
           <div className="q">
             <span className="badge">
               <Icon name="topics" />
@@ -145,7 +185,7 @@ export function Overview({ c }: { c: Ctx }) {
           </button>
         </article>
 
-        <article className="card answer">
+        <article className={`card answer edge-${proven.length ? 'ok' : 'watch'}`}>
           <div className="q">
             <span className="badge">
               <Icon name="book" />
@@ -197,7 +237,7 @@ export function Overview({ c }: { c: Ctx }) {
           </button>
         </article>
 
-        <article className="card answer">
+        <article className={`card answer edge-${moved ? 'brand' : 'ok'}`}>
           <div className="q">
             <span className="badge">
               <Icon name="clock" />

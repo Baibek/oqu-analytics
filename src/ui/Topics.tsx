@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { Status, TopicStat } from '../lib/analysis';
 import { HARD, MIN_LOCAL, MIN_STUDENTS, MIN_UNITS, PASS, WATCH } from '../lib/analysis';
 import { Ctx, evidenceLabel, fmt, glossary, Hint, Icon, Note, PageHead, Pill, ScopeNote, signed, statusLabel } from './common';
@@ -11,7 +11,14 @@ export function Topics({ c }: { c: Ctx }) {
   const g = glossary(t);
   const [view, setView] = useState<View>('difficulty');
   const [only, setOnly] = useState<Status | 'all'>('all');
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(c.focusTopic);
+
+  // Іздеуден немесе ИИ көмекшіден келген тақырыпты ашып, соған айналдырамыз
+  useEffect(() => {
+    if (c.focusTopic === null) return;
+    setOpen(c.focusTopic);
+    requestAnimationFrame(() => document.getElementById(`topic-${c.focusTopic}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+  }, [c.focusTopic]);
 
   const count = (s: Status) => stats.filter((x) => x.status === s).length;
   const visible = stats.filter((s) => only === 'all' || s.status === only);
@@ -26,7 +33,7 @@ export function Topics({ c }: { c: Ctx }) {
     const reg = local ? c.regionStats[s.i] : null;
     const regOk = reg && reg.status !== 'nodata';
     return (
-      <div key={s.i} className={`trow ${isOpen ? 'open' : ''}`}>
+      <div key={s.i} id={`topic-${s.i}`} className={`trow ${isOpen ? 'open' : ''}`}>
         <button className="tmain" onClick={() => setOpen(isOpen ? null : s.i)} aria-expanded={isOpen}>
           <span className="tname">
             <b>{tp.name[lang]}</b>

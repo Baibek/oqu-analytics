@@ -163,12 +163,16 @@ export function Hours({ c }: { c: Ctx }) {
             const next = [...snaps, { name, date: new Date().toISOString().slice(0, 16).replace('T', ' '), hours: Object.fromEntries(ds.topics.map((tp, i) => [tp.id, hours[i]])) }];
             setSnaps(next);
             saveSnaps(next);
+            c.notify(t(`«${name}» сақталды`, `«${name}» сохранён`));
           }}
         >
           <Icon name="save" size={15} />
           {t('Нұсқаны сақтау', 'Сохранить вариант')}
         </button>
-        <button className="btn sm" onClick={() => download('hours-plan.csv', rowsCsv())}>
+        <button className="btn sm" onClick={() => {
+            download('hours-plan.csv', rowsCsv());
+            c.notify(t('CSV файлы жүктелді', 'CSV-файл скачан'));
+          }}>
           <Icon name="download" size={15} />
           CSV
         </button>

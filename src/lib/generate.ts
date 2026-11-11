@@ -33,6 +33,49 @@ const mix = (a: number, b: number, c: number) => [...Array(a).fill('Оқулық
 const URBAN_MIX = mix(14, 3, 3);
 const RURAL_MIX = [...mix(8, 21, 12)].sort((x, y) => ((x.charCodeAt(7) * 7) % 5) - ((y.charCodeAt(7) * 7) % 5));
 
+const N_SCHOOLS = 64;
+
+interface CohortSchool {
+  s: number;
+  school: string;
+  district: string;
+  urban: boolean;
+  lang: 'kk' | 'ru';
+  textbook: string;
+  quality: number;
+  classes: { k: number; ability: number; baselines: number[] }[];
+}
+
+const cohorts = new Map<number, CohortSchool[]>();
+/** Бір параллельдің оқушылар тобы: барлық пәнге ортақ */
+export function cohort(grade: number): CohortSchool[] {
+  const hit = cohorts.get(grade);
+  if (hit) return hit;
+  const r = rng(5000 + grade);
+  const out: CohortSchool[] = [];
+  for (let s = 0; s < N_SCHOOLS; s++) {
+    const urban = s < 20;
+    const quality = gauss(r) * 4;
+    out.push({
+      s,
+      school: `№${s + 1} мектеп`,
+      district: urban ? 'Тараз қ.' : DISTRICTS[s % DISTRICTS.length],
+      urban,
+      lang: r() < 0.7 ? 'kk' : 'ru',
+      // Соңғы үш мектеп — D оқулығы: қорытынды жасауға дерек әдейі жеткіліксіз
+      textbook: s >= N_SCHOOLS - 3 ? 'Оқулық D' : urban ? URBAN_MIX[s] : RURAL_MIX[(s - 20) % RURAL_MIX.length],
+      quality,
+      classes: Array.from({ length: urban ? 2 + (s % 2) : 1 }, (_, k) => {
+        const ability = gauss(r) * 2;
+        const size = urban ? 22 + Math.floor(r() * 9) : 14 + Math.floor(r() * 10);
+        return { k, ability, baselines: Array.from({ length: size }, () => 52 + (urban ? 12 : 0) + quality + ability + gauss(r) * 12) };
+      }),
+    });
+  }
+  cohorts.set(grade, out);
+  return out;
+}
+
 export interface CourseSpec {
   key: string;
   subject: L10n;
@@ -91,49 +134,40 @@ export function generateCourse(spec: CourseSpec): Dataset {
 
   const units: Unit[] = [];
   const students: Student[] = [];
-  const N_SCHOOLS = 64;
 
-  for (let s = 0; s < N_SCHOOLS; s++) {
-    const urban = s < 20;
-    // Соңғы үш мектеп — D оқулығы: қорытынды жасауға дерек әдейі жеткіліксіз
-    const textbook = s >= N_SCHOOLS - 3 ? 'Оқулық D' : urban ? URBAN_MIX[s] : RURAL_MIX[(s - 20) % RURAL_MIX.length];
-    const school = `№${s + 1} мектеп`;
-    const district = urban ? 'Тараз қ.' : DISTRICTS[s % DISTRICTS.length];
-    const lang = r() < 0.7 ? ('kk' as const) : ('ru' as const);
-    const quality = gauss(r) * 4;
-    const nClasses = urban ? 2 + (s % 2) : 1;
-
-    for (let k = 0; k < nClasses; k++) {
+  // Мектептер, сыныптар және оқушылар параллельге ортақ: 8Ә сыныбының оқушылары
+  // алгебрада да, физикада да сол адамдар. Пәнге тек баллдар, сағаттар және мұғалім әсері тән.
+  const co = cohort(spec.grade);
+  for (const sc of co) {
+    for (const cl of sc.classes) {
       const ui = units.length;
       const unit: Unit = {
-        id: `u${s + 1}-${k + 1}`,
-        school,
-        name: `${spec.grade}${LETTERS[k]}`,
-        district,
-        urban,
-        lang,
-        textbook,
+        id: `u${sc.s + 1}-${cl.k + 1}`,
+        school: sc.school,
+        name: `${spec.grade}${LETTERS[cl.k]}`,
+        district: sc.district,
+        urban: sc.urban,
+        lang: sc.lang,
+        textbook: sc.textbook,
         hours: topics.map((t) => Math.max(1, t.planned + Math.round(gauss(r) * Math.max(1.1, t.planned * 0.15)))),
       };
       units.push(unit);
-      // Мұғалімнің нақты тақырыпты қалай өткізгені: тақырыпқа тән сынып әсері
+      // Мұғалімнің нақты тақырыпты қалай өткізгені: пән мен тақырыпқа тән сынып әсері
       const topicFx = topics.map(() => gauss(r) * 3);
-      const classFx = gauss(r) * 2;
-      const size = urban ? 22 + Math.floor(r() * 9) : 14 + Math.floor(r() * 10);
-      for (let n = 0; n < size; n++) {
-        const baseline = 52 + (urban ? 12 : 0) + quality + classFx + gauss(r) * 12;
+      const teacherFx = gauss(r) * 1.5;
+      cl.baselines.forEach((baseline, n) => {
         const noise: Record<string, number> = {};
         const scores = topics.map((t, i) => {
           // Тірек тақырыпты меңгермеген оқушы келесісінде де қиналады
           const own = gauss(r) * 11;
           const e = t.prereq.length ? 0.45 * noise[t.prereq[0]] + own : own;
           noise[t.id] = e;
-          const tb = (book[textbook] ?? 0) + (spec.bonus && textbook === spec.bonus.book && t.section.ru.startsWith(spec.bonus.sectionRu) ? spec.bonus.value : 0);
-          const v = base[t.id] - 5 + topicFx[i] + 0.7 * (baseline - 55) + (urban ? 5 : 0) + quality + classFx + tb + gain[t.id] * Math.log(unit.hours[i] / t.planned) + e;
+          const tb = (book[sc.textbook] ?? 0) + (spec.bonus && sc.textbook === spec.bonus.book && t.section.ru.startsWith(spec.bonus.sectionRu) ? spec.bonus.value : 0);
+          const v = base[t.id] - 5 + topicFx[i] + 0.7 * (baseline - 55) + (sc.urban ? 5 : 0) + sc.quality + cl.ability + teacherFx + tb + gain[t.id] * Math.log(unit.hours[i] / t.planned) + e;
           return Math.round(Math.min(100, Math.max(0, v)));
         });
         students.push({ id: `${unit.id}-${n + 1}`, unit: ui, baseline: Math.round(Math.min(100, Math.max(0, baseline))), scores });
-      }
+      });
     }
   }
   return { label: `${spec.subject.kk}, ${spec.grade}-сынып`, subject: spec.subject, grade: spec.grade, synthetic: true, hasBaseline: true, topics, units, students };

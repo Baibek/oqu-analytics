@@ -166,6 +166,14 @@ describe('пәндер, параллельдер, сыныптар', () => {
     }
   });
 
+  it('бір параллельдің барлық пәнінде оқушылар, мектептер мен сыныптар бірдей', () => {
+    for (const grade of [7, 8, 9]) {
+      const sets = COURSES.filter((c) => c.grade === grade).map((c) => generateCourse(c));
+      const sig = (d: (typeof sets)[number]) => `${d.students.length}|${d.units.map((u) => `${u.school}/${u.name}/${u.textbook}/${u.lang}`).join(',')}|${d.students.map((x) => x.baseline).join(',')}`;
+      expect(new Set(sets.map(sig)).size).toBe(1);
+    }
+  });
+
   it('бір сынып таңдалғанда тақырыптар сол сыныптың дерегімен есептеледі', () => {
     const ds = generateDemo();
     const u = ds.units.findIndex((x) => x.urban);
